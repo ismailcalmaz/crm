@@ -12,8 +12,8 @@
 // kartıyla AYNI motor. Fiyat ya da TSB kasko değişince rakam kendiliğinden
 // değişir; sql/107 tetikleyicileri de görseli ESKI işaretler.
 //
-// ⚠️ ÜRETİM TARAYICIDA. html2canvas 600px'lik gizli bir kapsayıcıyı tarar.
-// Şablon genişliği SABİT 600px olmalı (bkz. ilan-sablon.html) — sahibinden
+// ⚠️ ÜRETİM TARAYICIDA. html2canvas 800px'lik gizli bir kapsayıcıyı tarar.
+// Şablon genişliği SABİT 800px olmalı (bkz. ilan-sablon.html) — sahibinden
 // açıklamasındaki görseli küçültmez, taşan kısmı kırpar.
 // html2canvas ~200KB — sadece üretim anında dinamik import ediliyor
 // (qr.js'te olduğu gibi), sayfa açılışına yük binmiyor.
@@ -21,7 +21,7 @@
 import { supabase } from './supabase-client.js'
 import { kacis, dbHata, buyuk } from './veri.js'
 import { PARCALAR, RENK } from './ekspertiz.js'
-import { krediOranlariYukle, kaskoBedeliYukle, hesapBireysel, hesapTuzel } from './kredi-hesap.js'
+import { krediOranlariYukle, kaskoBedeliYukle, hesapOtosor, hesapTuzel } from './kredi-hesap.js'
 
 export const BUCKET = 'ilan-gorselleri'
 
@@ -245,7 +245,15 @@ export async function veriTopla(aracId) {
   }
 
   // --- KREDİ: canlı hesap → sitedeki `row` biçimine köprü ---
-  const bir = hesapBireysel(fiyat, kasko, oranlar)
+  // ⚠️ "BİREYSEL MÜŞTERİLERİMİZ" satırı OTOSOR hesabından besleniyor
+  //   (Göksenil, 26 Ağu 2026): araç kartındaki kredi simülatörünün OTOSOR
+  //   sekmesinde görülen taksit/peşinat ile İLANDAKİ rakam AYNI olmalı.
+  //   Eskiden hesapBireysel kullanılıyordu; o kasko bandına bağlı ve yüksek
+  //   fiyatlı araçta çok küçük kredi verip anlamsız peşinat üretiyordu
+  //   (ör. 1.850.000 ₺ araçta 1.524.653 ₺ peşinat).
+  //   hesapOtosor fiyat üzerinden çalışır: vade 36/24/12, kredi fiyatın
+  //   tamamı (>1,2 M ise (fiyat-100.000)x0,70), peşinat = fiyat - kredi.
+  const bir = hesapOtosor(fiyat, oranlar)
   const tuz = hesapTuzel(fiyat, kasko, oranlar)
   const ustSinir = Number(ayarlar.ilan_kasko_ust_sinir ?? 2000000)
   const dsOran = Number(ayarlar.ilan_dijital_senet_oran ?? 0.20)
@@ -390,7 +398,7 @@ async function canvasUret(html) {
   const stiller = (html.match(/<style[\s\S]*?<\/style>/gi) || []).join('\n')
 
   const kap = document.createElement('div')
-  kap.style.cssText = 'position:fixed;left:-9999px;top:0;width:600px;background:#fff;z-index:-1'
+  kap.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;z-index:-1'
   kap.innerHTML = stiller + icerik
   document.body.appendChild(kap)
   // Fontlar hazır olmadan taranırsa metinler kayar
@@ -400,11 +408,13 @@ async function canvasUret(html) {
   let blob
   try {
     const canvas = await html2canvas(kap.querySelector('.ilan') || kap, {
-      // ⚠️ scale 1 — ÇIKTININ PİKSEL GENİŞLİĞİ 600 OLMALI.
+      // ⚠️ scale 1 — ÇIKTININ PİKSEL GENİŞLİĞİ 800 OLMALI.
       //   sahibinden ilan açıklamasındaki görseli KÜÇÜLTMEZ, taşanı KIRPAR.
       //   Eskiden scale:2 ile 1600px üretiliyordu ve sağ yarısı görünmüyordu
       //   (donanım listesinin sağ kolonu kesikti — 26 Ağu 2026 tespiti).
       //   Üretilen dosya zaten eksiksizdi; kırpma sahibinden tarafındaydı.
+      //   ⚠️ 800 DOĞRU GENİŞLİK — ölçüldü: sahibinden'de tam oturan referans
+      //   görsel 800x1667 px. Bir ara 600'e düşürüldü, gereksizdi, geri alındı.
       scale: 1,
       backgroundColor: '#fff',
       useCORS: true,

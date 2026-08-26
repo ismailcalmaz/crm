@@ -10,23 +10,24 @@
     • ekspertiz lejant renkleri CRM'in ekspertiz.js RENK haritasıyla eşitlendi
       (şema da CRM'in 13 parçalı img/ekspertiz-sema.svg'si — cam etiketiyle aynı)
   Doldurma: js/ilan-gorsel.js · Görsele çeviren: html2canvas (vendor).
-  ⚠️ GENİŞLİK 600px SABİT — html2canvas bu ölçüde tarar ve scale:1 ile
-     tam 600px'lik görsel üretir. DEĞİŞTİRME:
-     sahibinden ilan açıklamasındaki görseli KÜÇÜLTMEZ, taşan kısmı KIRPAR.
-     Eskiden 800px şablon + scale:2 = 1600px üretiliyordu ve sahibinden'de
-     sağ yarısı görünmüyordu (donanım listesinin sağ kolonu kesikti).
-     Ölçüm 26 Ağu 2026: 600x1349 px · 142 kB · yatay taşma 0.
+  ⚠️ GENİŞLİK 800px SABİT — html2canvas bu ölçüde tarar ve ilan-gorsel.js
+     scale:1 ile TAM 800px'lik görsel üretir. İKİSİNİ DE DEĞİŞTİRME.
+     sahibinden ilan açıklamasındaki görseli KÜÇÜLTMEZ, taşan kısmı KIRPAR;
+     eskiden scale:2 ile 1600px üretiliyordu ve sağ yarısı görünmüyordu
+     (donanım listesinin sağ kolonu kesikti). Üretilen dosya eksiksizdi,
+     kırpma sahibinden tarafındaydı.
+     Ölçüm: sahibinden'de tam oturan referans görsel 800x1667 px.
 -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    width:600px;
+    width:800px;
     font-family:'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     color:#2b2b2b;
     background:#ffffff;
   }
   .ilan {
-    width:600px;
+    width:800px;
     background:#ffffff;
     border:1px solid #e3e3e3;
   }
@@ -34,7 +35,7 @@
   .ust {
     background:linear-gradient(135deg,#451111 0%,#601818 100%);
     color:#fff;
-    padding:14px 18px;
+    padding:18px 28px;
     display:flex;
     align-items:center;
     justify-content:space-between;
@@ -48,14 +49,14 @@
     font-size:13px; font-weight:600;
   }
   /* Bölüm başlığı */
-  .blok { padding:15px 18px; border-bottom:1px solid #eee; }
+  .blok { padding:20px 28px; border-bottom:1px solid #eee; }
   .blok:last-child { border-bottom:none; }
   .blok-baslik {
     display:inline-block;
     background:#451111; color:#fff;
-    font-size:12px; font-weight:700; letter-spacing:.4px;
-    padding:4px 12px; border-radius:4px;
-    margin-bottom:9px;
+    font-size:14px; font-weight:700; letter-spacing:.5px;
+    padding:6px 16px; border-radius:4px;
+    margin-bottom:14px;
   }
   /* Peşinat / kredi satırları */
   .kredi-ozet {
@@ -95,10 +96,10 @@
   /* Donanım listesi */
   .donanim {
     display:grid; grid-template-columns:1fr 1fr;
-    gap:2px 12px; margin-top:4px;
+    gap:4px 20px; margin-top:6px;
   }
   .donanim-item {
-    font-size:11.5px; padding:1px 0; line-height:1.35;
+    font-size:13px; padding:3px 0;
     display:flex; align-items:center; gap:7px;
   }
   .donanim-item::before {
@@ -121,7 +122,7 @@
   /* Alt bilgi */
   .alt {
     background:#2b2b2b; color:#ddd;
-    padding:11px 18px; font-size:12px;
+    padding:14px 28px; font-size:12px;
     display:flex; justify-content:space-between; align-items:center;
   }
   .alt .adres { opacity:.8; }
