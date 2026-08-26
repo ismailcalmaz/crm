@@ -1,0 +1,64 @@
+# =====================================================================
+# Statik yayın — GitHub Pages
+#
+# Neden var: 6 Ağu 2026'da eski "pages build and deployment" derleyicisi
+# TAKILDI. Ölçüm (koşu #293-#295):
+#     build   : 8 saniye  ✓
+#     deploy  : "Current status: deployment_in_progress" × 250,
+#               10 dakikada "Timeout reached, aborting!"       ✗
+# Yani derleme değil, KONUŞLANDIRMA adımı sonsuza kadar bekliyordu.
+# GitHub durum sayfası "All Systems Operational" idi — genel kesinti
+# değil, bu deponun Pages kaydı tekil olarak kilitlenmişti.
+#
+# Bu iş akışı eski derleyiciyi tümüyle atlar:
+#   · Site %100 statik, `.nojekyll` zaten var → Jekyll'e hiç gerek yok
+#   · upload-pages-artifact + deploy-pages ile doğrudan yayın
+#   · Derleme adımı yok; iş sadece "dosyaları paketle ve yayınla"
+#
+# ⚠️ Bu dosya ÖZEL repoda `crm/.github/workflows/` altında durur ve alt
+#    ağaç push'uyla halka açık reponun KÖKÜNE iner. GitHub yalnız kökteki
+#    `.github/workflows`'u okur — yani crm-2'de etkisizdir, crm'de çalışır.
+#    Doğrudan GitHub arayüzünden eklersek halka açık repoda bizim
+#    bilmediğimiz bir commit oluşur ve iki repo yine ayrışır (6 Ağu dersi).
+# =====================================================================
+name: Statik yayın
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # elle tetiklenebilsin (tıkanma sonrası işe yarar)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# ⚠️ cancel-in-progress: TRUE. Şablonda `false` gelir, ama bizde tam da
+#    takılı kalan konuşlandırmalar kuyruk oluşturdu. `true` ile yeni koşu
+#    eskisini iptal eder; böylece bir kilit tüm sırayı bekletmez.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  yayinla:
+    environment:
+      name: github-pages
+      url: ${{ steps.konuslandir.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Pages ayarlarını oku
+        uses: actions/configure-pages@v5
+
+      - name: Dosyaları paketle
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'          # repo kökü = crm/ alt ağacı
+
+      - name: Yayınla
+        id: konuslandir
+        uses: actions/deploy-pages@v4

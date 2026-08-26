@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dikkat Listesi — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">flag</span> Dikkat Listesi</h2>
+          <p id="dkOzet" class="text-body-md text-on-surface-variant">Sonradan gözden geçirilmek üzere işaretlenen kayıtlar.</p>
+        </div>
+        <button id="dkTumu" class="bg-surface border border-outline-variant text-on-surface-variant px-4 h-10 rounded-lg text-label-md font-bold hover:bg-surface-container flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">done_all</span> Tümünü Kontrol Edildi İşaretle</button>
+      </div>
+
+      <div class="flex items-center gap-3 bg-surface-container-low border border-outline-variant text-on-surface-variant rounded-xl px-4 py-3">
+        <span class="material-symbols-outlined text-primary">info</span>
+        <span class="text-body-md">Bu liste işlemleri <b>durdurmaz</b> — sonradan gözden geçirilmek üzere işaretlenen kayıtları gösterir.</span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <div id="dkSekmeler" class="flex gap-2"></div>
+        <select id="dkTipF" class="bg-surface border border-outline-variant rounded-lg px-3 py-2 text-body-md lg:ml-auto"><option value="">Tüm Tipler</option></select>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-gutter items-start">
+        <div id="dkListe"></div>
+        <aside id="dkDetay" class="hidden xl:block bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg sticky top-24 min-h-[300px]"></aside>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { dikkatKur } from './js/sigorta-dikkat.js'
+    const d = await requireAuth({ sayfa: 'sigorta_dikkat' })
+    if (d) { ustBarKur(d); await dikkatKur(d) }
+  </script>
+</body>
+</html>

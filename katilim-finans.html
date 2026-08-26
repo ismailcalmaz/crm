@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Katılım Finans — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Finans Takip Merkezi</h2>
+          <p class="text-body-md text-on-surface-variant">"Bugün kimi aramalıyım?" — katılım finans hatırlatmalarını kaçırma.</p>
+        </div>
+        <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+      </div>
+
+      <!-- Bugün Aranacaklar bandı -->
+      <div id="bugunBand"></div>
+
+      <!-- KPI -->
+      <div id="kpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+
+      <!-- Yaklaşan hatırlatma özeti (Bugün/3g/7g/15g/30g) -->
+      <div id="ozetSerit" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-gutter"></div>
+
+      <!-- Kontrol: arama + danışman + filtre -->
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="relative flex-1 min-w-[200px] max-w-md">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+          <input id="finansAra" placeholder="Müşteri, telefon veya araç ara…" class="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-9 pr-3 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+        <div id="danismanFiltreWrap" class="hidden"><select id="danismanFiltre" class="bg-surface-container-low border border-outline-variant rounded-lg py-2 px-3 text-body-md"></select></div>
+      </div>
+      <div id="filtreler" class="flex flex-wrap items-center gap-sm"></div>
+
+      <!-- Split: görev listesi + sticky detay -->
+      <div class="flex gap-gutter items-start">
+        <div class="flex-1 min-w-0 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+          <div class="px-lg py-3 border-b border-outline-variant flex items-center justify-between">
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">checklist</span> Görev Merkezi</h3>
+            <span id="finansSayac" class="text-label-sm text-on-surface-variant"></span>
+          </div>
+          <div id="liste" class="overflow-auto p-3 space-y-2.5" style="max-height:calc(100vh - 360px)"></div>
+        </div>
+        <aside id="finansDetay" class="hidden xl:flex xl:w-[380px] shrink-0 flex-col bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden self-stretch" style="max-height:calc(100vh - 360px)"></aside>
+      </div>
+
+    </div>
+
+    <div id="finansDetayKatman" class="fixed inset-0 bg-black/40 z-40 hidden"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { katilimKur } from './js/katilim-finans.js'
+    const d = await requireAuth({ sayfa: 'katilim_finans' })
+    if (d) { ustBarKur(d); await katilimKur(d) }
+  </script>
+</body>
+</html>

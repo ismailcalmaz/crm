@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Talepler — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <!-- Başlık + aksiyonlar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Talepler</h2>
+          <p class="text-body-md text-on-surface-variant">Müşteri taleplerini ve satın alma süreçlerini yönetin.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-sm">
+          <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+          <button id="excelBtn" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">download</span> Excel</button>
+          <button id="yeniAcBtn" class="bg-primary text-on-primary px-lg py-sm rounded-lg text-label-md font-bold flex items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20"><span class="material-symbols-outlined text-[20px]">add_circle</span> Yeni Talep Oluştur</button>
+        </div>
+      </div>
+
+      <!-- Filtre çipleri -->
+      <div id="filtreler" class="flex flex-wrap items-center gap-sm"></div>
+
+      <!-- Yeni Talep formu (gizli başlar) -->
+      <div id="yeniTalepKart" class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow p-lg gizli">
+        <h2 class="text-title-lg text-primary mb-1">Yeni Talep</h2>
+        <p class="text-body-md text-on-surface-variant mb-4">Kaydedilince talep açılır ve ilk görüşme notu <strong>havuza (sahipsiz)</strong> düşer.</p>
+        <form id="talepForm">
+          <div class="form-satir">
+            <div class="alan"><label>Müşteri Ad Soyad *</label><input name="musteri_ad_soyad" required /></div>
+            <div class="alan"><label>Telefon</label><input name="telefon" type="tel" inputmode="tel" autocomplete="tel" /></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>E-posta</label><input name="eposta" type="email" /></div>
+            <div class="alan"><label>Kaynak</label>
+              <select name="kaynak">
+                <option value="telefon">Telefon</option>
+                <option value="kapi">Kapı (Showroom)</option>
+                <option value="web-takas">Web — Takas</option>
+                <option value="web-iletisim">Web — İletişim</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>Araç Tipi</label>
+              <select name="arac_kategori" id="katKategori"><option value="">Seçiniz</option></select>
+            </div>
+            <div class="alan"><label>Marka</label>
+              <select name="marka" id="katMarka" disabled><option value="">Önce araç tipi seçin</option></select>
+            </div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>Model</label>
+              <select name="model" id="katModel" disabled><option value="">Önce marka seçin</option></select>
+            </div>
+            <div class="alan"><label>Paket / Donanım</label><input name="paket" placeholder="örn. Premium, 1.5 dCi" /></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>Model Yılı (min – max)</label>
+              <div style="display:flex; gap:8px">
+                <select name="model_yili_min" id="katYilMin" style="width:100%"><option value="">min</option></select>
+                <select name="model_yili_max" id="katYilMax" style="width:100%"><option value="">max</option></select>
+              </div>
+            </div>
+            <div class="alan"></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>Bütçe Min (₺)</label><input name="butce_min" inputmode="numeric" class="para-input" placeholder="örn. 1.000.000" /></div>
+            <div class="alan"><label>Bütçe Max (₺)</label><input name="butce_max" inputmode="numeric" class="para-input" placeholder="örn. 1.500.000" /></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan tam"><label>Açıklama</label><textarea name="aciklama"></textarea></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan tam">
+              <label style="display:flex;flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0">
+                <input type="checkbox" name="katilim_finans" id="katilimCheck" style="width:18px;height:18px;flex:0 0 auto;margin:0" />
+                <span>Katılım Finans (Eminevim, Katılımevim vb.)</span>
+              </label>
+            </div>
+          </div>
+          <div id="finansAlanlari" class="form-satir gizli">
+            <div class="alan"><label>Finansman Tutarı (₺)</label><input name="finansman_tutari" type="number" /></div>
+            <div class="alan"><label>Finansman Tarihi</label><input name="finansman_tarihi" type="date" /></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan"><label>Müşteri Durumu *</label><select name="musteri_durumu" id="yeniTalepDurum"></select></div>
+            <div class="alan"></div>
+          </div>
+          <div class="form-satir">
+            <div class="alan tam"><label>İlk Görüşme Notu</label><textarea name="gorusme_notu" placeholder="Müşteriyle ilk görüşmenin özeti…"></textarea></div>
+          </div>
+          <div id="mukerrerUyari" class="gizli" style="margin-top:12px"></div>
+          <div class="satir-arasi">
+            <span id="kayitDurum" class="soluk"></span>
+            <div>
+              <button type="button" id="iptalBtn" class="btn btn-cizgi btn-kucuk">İptal</button>
+              <button type="submit" class="btn btn-gold">Kaydet ve Havuza Aç</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Kontrol çubuğu: arama + sayaç + yoğunluk -->
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="relative flex-1 min-w-[200px] max-w-md">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+          <input id="talepAra" placeholder="Müşteri, telefon veya araç ara… (Ctrl+K)" class="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-9 pr-3 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="talepSayac" class="text-label-md text-on-surface-variant whitespace-nowrap"></span>
+          <button id="filtreBtn" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant bg-surface-container-low text-on-surface-variant hover:border-primary hover:text-primary text-label-md font-bold" title="Gelişmiş filtre (kaynak, danışman)">
+            <span class="material-symbols-outlined text-[18px]">tune</span> Filtre
+            <span id="filtreRozet" class="hidden absolute -top-1.5 -right-1.5 bg-primary text-on-primary text-[10px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center"></span>
+          </button>
+          <div id="yogunluk" class="inline-flex rounded-lg border border-outline-variant overflow-hidden bg-surface-container-low">
+            <button data-yog="sik" class="px-2.5 py-1.5 text-on-surface-variant" title="Sıkışık görünüm"><span class="material-symbols-outlined text-[18px]">density_small</span></button>
+            <button data-yog="normal" class="px-2.5 py-1.5 border-l border-outline-variant text-primary" title="Normal görünüm"><span class="material-symbols-outlined text-[18px]">density_medium</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- İki bölme: liste (sol) + detay paneli (sağ, satıra tıklayınca açılır) -->
+      <div class="flex gap-gutter items-start">
+        <div class="flex-1 min-w-0 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+          <div id="talepListe" class="overflow-auto" style="max-height:calc(100vh - 230px)"></div>
+        </div>
+        <aside id="talepDetay" class="hidden xl:flex xl:w-[400px] shrink-0 flex-col bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden self-stretch" style="max-height:calc(100vh - 230px)"></aside>
+      </div>
+
+    </div>
+
+    <!-- Toplu işlem çubuğu (seçim yapılınca görünür) -->
+    <div id="bulkBar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-on-surface text-white rounded-full px-5 py-3 flex items-center gap-4 shadow-2xl"></div>
+    <!-- Mobil detay örtüsü -->
+    <div id="detayKatman" class="fixed inset-0 bg-black/40 z-40 hidden"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { taleplerKur } from './js/talepler.js'
+    const d = await requireAuth({ sayfa: 'talepler' })
+    if (d) { ustBarKur(d); await taleplerKur(d) }
+  </script>
+</body>
+</html>

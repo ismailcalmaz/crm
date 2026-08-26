@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Operasyon Merkezi — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div id="kok" class="p-lg md:p-xl max-w-[1600px] mx-auto w-full"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { operasyonKur } from './js/operasyon.js'
+    const d = await requireAuth({ sayfa: 'operasyon_panel' })
+    if (d) { ustBarKur(d); await operasyonKur(d) }
+  </script>
+</body>
+</html>

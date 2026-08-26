@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DMS Paneli — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <!-- Kontrol merkezi kart ızgarası; diğer sayfalardan (form/tablo) daha geniş
+         kullanılabilir. 1440px, 4K ekranda içeriği ekranın %28'ine sıkıştırıyordu
+         (canlı ölçüm 7 Ağu 2026: pencere 5120px). Yalnız bu sayfa genişletildi —
+         form ve tablo sayfalarında uzun satır okunaklılığı bozar. -->
+    <div id="kok" class="p-lg md:p-xl max-w-[2400px] mx-auto w-full"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { dmsPanelKur } from './js/dms-panel.js'
+    const d = await requireAuth({ sayfa: 'dms_panel' })
+    if (d) { ustBarKur(d); await dmsPanelKur(d) }
+  </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Takas — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Web Takas</h2>
+          <p class="text-body-md text-on-surface-variant">Müşterinin elindeki araç ↔ ilgilendiği araç. Değerlendir, yönlendir, sonuçlandır.</p>
+        </div>
+        <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+      </div>
+
+      <div id="kpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div id="filtreler" class="flex flex-wrap items-center gap-sm"></div>
+        <div class="relative flex-1 min-w-[200px] max-w-xs">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+          <input id="takasAra" placeholder="Müşteri veya araç ara…" class="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-9 pr-3 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+      </div>
+
+      <div class="flex gap-gutter items-start">
+        <div class="flex-1 min-w-0 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+          <div id="liste" class="overflow-auto p-3 space-y-2.5" style="max-height:calc(100vh - 300px)"></div>
+        </div>
+        <aside id="takasDetay" class="hidden xl:flex xl:w-[420px] shrink-0 flex-col bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden self-stretch" style="max-height:calc(100vh - 300px)"></aside>
+      </div>
+
+    </div>
+    <div id="takasDetayKatman" class="fixed inset-0 bg-black/40 z-40 hidden"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { webTakasKur } from './js/web-takas.js'
+    const d = await requireAuth({ sayfa: 'web_takas' })
+    if (d) { ustBarKur(d); await webTakasKur() }
+  </script>
+</body>
+</html>

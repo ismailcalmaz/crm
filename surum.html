@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yenilikler — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[900px] mx-auto w-full space-y-lg">
+      <div>
+        <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">campaign</span> Yenilikler & Sürüm Notları</h2>
+        <p class="text-body-md text-on-surface-variant">Sisteme eklenen yeni özellikler ve güncellemeler.</p>
+      </div>
+      <div id="surumListe" class="space-y-md"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { surumKur } from './js/surum.js'
+    const d = await requireAuth()
+    if (d) { ustBarKur(d); await surumKur(d) }
+  </script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giriş — İsmail Çalmaz Otomotiv CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="stitch min-h-screen flex flex-col lg:flex-row bg-background">
+    <!-- Görsel panel: mobilde üst bant, masaüstünde sağ yarı -->
+    <div class="relative h-44 sm:h-56 lg:h-auto lg:flex-1 overflow-hidden order-1 lg:order-2">
+      <img src="img/giris-arac.jpg" alt="İsmail Çalmaz Otomotiv galeri" class="absolute inset-0 w-full h-full object-cover object-center" />
+      <div class="absolute inset-0" style="background:linear-gradient(155deg, rgba(106,26,38,.34) 0%, rgba(20,12,10,.10) 45%, rgba(20,12,10,.28) 100%)"></div>
+    </div>
+
+    <!-- Form panel -->
+    <div class="flex items-center justify-center p-6 sm:p-10 lg:w-[480px] shrink-0 order-2 lg:order-1 bg-white">
+      <div class="w-[min(400px,92vw)] text-center">
+        <!-- Marka Kılavuzu §05 (giriş ekranı kilidi): kurumsal dikey kilit +
+             ayırıcı çizgi + İÇ OS + slogan. Logo birebir korunur. -->
+        <img src="img/marka/lockup-bordo.png" alt="İsmail Çalmaz Otomotiv" class="w-full max-w-[250px] mx-auto" />
+        <div class="w-[120px] h-[2px] bg-outline-variant mx-auto my-4"></div>
+        <div class="text-[40px] font-black tracking-[.05em] text-primary leading-none">İÇ<span class="font-light"> OS</span></div>
+        <p class="text-[11px] uppercase tracking-[.2em] text-on-surface-variant leading-[1.9] mt-3 mb-7">
+          Yapay Zekâ Destekli<br>Otomotiv Operasyon Sistemi
+        </p>
+
+        <button id="googleBtn" class="w-full flex items-center justify-center gap-3 bg-white text-[#3c4043] border border-outline-variant rounded-lg py-3 text-body-lg font-semibold hover:bg-surface-container-low transition-colors custom-shadow">
+          <svg class="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Google ile Giriş Yap
+        </button>
+
+        <!-- Şirket Google hesabı olmayan personel (bilgi işlem / operasyon) -->
+        <button id="sifreAc" class="w-full mt-3 text-label-md font-bold text-on-surface-variant hover:text-primary transition-colors py-2">
+          Şirket e-postam yok — şifreyle giriş
+        </button>
+        <form id="sifreForm" class="hidden mt-2 text-left space-y-3">
+          <label class="block">
+            <span class="text-label-sm text-on-surface-variant">E-posta</span>
+            <input id="spEmail" type="email" autocomplete="username" required
+              class="w-full mt-1 border border-outline-variant rounded-lg px-3 py-2.5 text-body-md focus:ring-2 focus:ring-primary/20 focus:outline-none" />
+          </label>
+          <label class="block">
+            <span class="text-label-sm text-on-surface-variant">Şifre</span>
+            <input id="spSifre" type="password" autocomplete="current-password" required minlength="8"
+              class="w-full mt-1 border border-outline-variant rounded-lg px-3 py-2.5 text-body-md focus:ring-2 focus:ring-primary/20 focus:outline-none" />
+          </label>
+          <button id="spGiris" type="submit"
+            class="w-full bg-primary text-on-primary rounded-lg py-3 text-body-lg font-bold hover:opacity-90 transition-opacity">Giriş Yap</button>
+          <p class="text-label-sm text-on-surface-variant text-center">Şifreni bilmiyorsan yöneticine başvur — buradan kayıt olunamaz.</p>
+        </form>
+
+        <div id="durum" class="durum-mesaj bilgi" style="margin-top:16px"></div>
+        <p class="text-label-sm text-on-surface-variant mt-6">Yalnızca yetkili personel erişebilir.</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { signInWithGoogle, signInWithPassword, getSession, girisAudit } from './js/auth.js'
+    import { getDanisman } from './js/supabase-client.js'
+    import { ilkSayfaHref } from './js/yetki.js'
+
+    const durum = document.getElementById('durum')
+    const btn = document.getElementById('googleBtn')
+
+    const params = new URLSearchParams(location.search)
+    if (params.get('durum') === 'kayitsiz') {
+      durum.className = 'durum-mesaj hata'
+      durum.textContent = 'Bu Google hesabı sistemde kayıtlı değil. Yöneticinize başvurun.'
+    } else if (params.get('durum') === 'pasif') {
+      durum.className = 'durum-mesaj hata'
+      durum.textContent = 'Hesabınız pasif durumda. Yöneticinize başvurun.'
+    }
+
+    ;(async () => {
+      const session = await getSession()
+      if (session && !params.get('durum')) {
+        const d = await getDanisman()
+        if (d && d.aktif !== false) {
+          // Google dönüşü de buradan geçer → giriş audit kaydı burada atılır
+          await girisAudit(session.user?.app_metadata?.provider || 'google')
+          location.replace(ilkSayfaHref(d))
+        }
+      }
+    })()
+
+    btn.addEventListener('click', async () => {
+      durum.className = 'durum-mesaj bilgi'
+      durum.textContent = 'Google\'a yönlendiriliyorsunuz…'
+      btn.disabled = true
+      try {
+        await signInWithGoogle()
+      } catch (e) {
+        durum.className = 'durum-mesaj hata'
+        durum.textContent = 'Giriş başlatılamadı: ' + (e.message || e)
+        btn.disabled = false
+      }
+    })
+
+    // --- Şifreli giriş (şirket Google hesabı olmayan personel) ---
+    const sifreAc = document.getElementById('sifreAc')
+    const sifreForm = document.getElementById('sifreForm')
+    sifreAc.addEventListener('click', () => {
+      sifreForm.classList.toggle('hidden')
+      sifreAc.textContent = sifreForm.classList.contains('hidden')
+        ? 'Şirket e-postam yok — şifreyle giriş' : 'Google ile girişe dön'
+      if (!sifreForm.classList.contains('hidden')) document.getElementById('spEmail').focus()
+    })
+    sifreForm.addEventListener('submit', async e => {
+      e.preventDefault()
+      const gBtn = document.getElementById('spGiris')
+      durum.className = 'durum-mesaj bilgi'
+      durum.textContent = 'Giriş yapılıyor…'
+      gBtn.disabled = true
+      try {
+        await signInWithPassword(document.getElementById('spEmail').value, document.getElementById('spSifre').value)
+        const d = await getDanisman()
+        if (!d) { location.replace('login.html?durum=kayitsiz'); return }
+        if (d.aktif === false) { location.replace('login.html?durum=pasif'); return }
+        await girisAudit('sifre')
+        location.replace(ilkSayfaHref(d))
+      } catch (err) {
+        console.error('[giris] sifreli giris', err)
+        durum.className = 'durum-mesaj hata'
+        // Supabase mesajı İngilizce döner — kullanıcıya Türkçe göster
+        durum.textContent = /invalid login/i.test(err?.message || '')
+          ? 'E-posta veya şifre hatalı.' : ('Giriş yapılamadı: ' + (err.message || err))
+        gBtn.disabled = false
+      }
+    })
+  </script>
+</body>
+</html>

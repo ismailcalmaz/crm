@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sigorta Paneli — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">shield</span> Sigorta Paneli</h2>
+          <p id="pnOzet" class="text-body-md text-on-surface-variant">Operasyon komuta merkezi.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center bg-surface border border-outline-variant rounded-lg px-3 py-2 w-64 relative">
+            <span class="material-symbols-outlined text-on-surface-variant text-[20px]">search</span>
+            <input id="pnAra" placeholder="Plaka, TC, poliçe, müşteri…" class="bg-transparent outline-none text-body-md ml-2 w-full" />
+            <div id="pnAraSonuc" class="hidden absolute left-0 right-0 top-[calc(100%+6px)] bg-surface-container-lowest border border-outline-variant rounded-xl shadow-2xl z-50 max-h-80 overflow-y-auto"></div>
+          </div>
+          <a href="sigorta-police.html" class="bg-primary text-on-primary pl-3 pr-4 h-10 flex items-center gap-1.5 rounded-lg text-label-md font-bold hover:opacity-90 shadow-sm shadow-primary/20"><span class="material-symbols-outlined text-[20px]">add</span> Poliçe</a>
+        </div>
+      </div>
+
+      <div id="pnKpi" class="grid grid-cols-2 lg:grid-cols-5 gap-gutter"></div>
+
+      <!-- Bugün Yapılacaklar -->
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <h3 class="text-title-lg text-primary flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-[22px]">checklist</span> Bugün Yapılacaklar <span id="pnBugunSayi" class="text-[11px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">0</span></h3>
+        <div id="pnBugun"></div>
+      </section>
+
+      <!-- Alt paneller -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <section id="pnVize" class="bg-surface-container-lowest rounded-2xl border-l-4 border-error border-y border-r border-outline-variant custom-shadow p-lg"></section>
+        <section id="pnSahipsiz" class="bg-surface-container-lowest rounded-2xl border-l-4 border-tertiary border-y border-r border-outline-variant custom-shadow p-lg"></section>
+        <section id="pnSirket" class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg"></section>
+        <section id="pnDikkat" class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg"></section>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { sigortaPanelKur } from './js/sigorta.js'
+    const d = await requireAuth({ sayfa: 'sigorta_panel' })
+    if (d) { ustBarKur(d); await sigortaPanelKur(d) }
+  </script>
+</body>
+</html>

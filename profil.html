@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Profilim — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1200px] mx-auto w-full space-y-lg">
+
+      <!-- Hero -->
+      <section id="profilHero" class="rounded-2xl border border-outline-variant custom-shadow overflow-hidden bg-on-surface"></section>
+
+      <!-- Kişisel performans KPI -->
+      <section id="profilKpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></section>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+        <!-- Aylık görüşme trendi -->
+        <section class="lg:col-span-2 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">insights</span> Son 6 Ay — Görüşmelerim</h3>
+          <p class="text-label-md text-on-surface-variant mb-4">Açtığın görüşme notları (açılış kaydı hariç).</p>
+          <div id="profilTrend"></div>
+        </section>
+        <!-- Ayarlar -->
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg space-y-4">
+          <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">tune</span> Ayarlar</h3>
+          <div id="profilAyar"></div>
+        </section>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <!-- Erişim / yetkiler -->
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">key</span> Erişebildiğim Sayfalar</h3>
+          <div id="profilYetki" class="flex flex-wrap gap-2"></div>
+        </section>
+        <!-- E-posta imzası -->
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">draw</span> E-posta İmzası</h3>
+          <div id="profilImza"></div>
+        </section>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { profilKur } from './js/profil.js'
+    const d = await requireAuth({})
+    if (d) { ustBarKur(d); await profilKur(d) }
+  </script>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cam Etiketi — CRM</title>
+  <style>
+    /* =================================================================
+       CAM ETİKETİ — matbaa basılı A4 forma ÜZERİNE yazdırma şablonu.
+       Ekranda arka planda rehber görsel var; YAZDIRIRKEN GİZLENİR —
+       kâğıtta zaten basılı. Yalnızca veriler basılır.
+
+       ⚙️ AYAR: bütün konumlar aşağıdaki --degiskenlerde, mm cinsinden.
+       "Fiyatı 3mm yukarı al" demek → --fiyat-y değerini 3 azaltmak.
+       ================================================================= */
+    /* ⚠️ Alan KONUMLARI burada DEĞİL — cam-etiketi-duzenle.js içinde mm
+       cinsinden tutulur ve master admin editörden ayarlar (left/top/width/
+       font-size/hiza/renk/kalınlık satır içi uygulanır). Burada yalnız
+       alanın İÇ yapısı (başlık/değer oranı, ikon, kutucuk) tanımlıdır. */
+    :root {
+      --bordo: #5f1818;
+      --siyah: #111;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #6b6b6b; }
+    body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
+
+    .sayfa {
+      position: relative;
+      width: 210mm; height: 297mm;
+      margin: 12px auto;
+      background: #fff;
+      overflow: hidden;
+      box-shadow: 0 6px 30px rgba(0,0,0,.4);
+    }
+    /* Matbaa formunun ekran rehberi — PDF'in GERÇEK render'ı (PyMuPDF, 200dpi).
+       YAZDIRILMAZ; kâğıtta zaten basılı. Opaklık kaydırıcıyla değişir. */
+    .rehber {
+      position: absolute; inset: 0;
+      width: 210mm; height: 297mm;
+      object-fit: fill;
+      opacity: var(--rehber-opaklik, .6);
+      pointer-events: none;
+    }
+    /* Konum/punto/hiza/renk JS'ten satır içi gelir; burada yalnız iç yapı. */
+    .alan { position: absolute; line-height: 1.12; }
+    /* "Basma" işaretli alan: ekranda görünmez, YAZDIRMADA hiç yok. Düzenleme
+       modunda soluk görünür — yoksa kaybolur ve geri açılamaz. */
+    .alan-gizli { opacity: 0; pointer-events: none; }
+    body.duzenle-modu .alan-gizli { opacity: .28; pointer-events: auto; }
+
+    /* Tek satırlık büyük rakamlar sıkı satır yüksekliği ister */
+    .a-fiyat, .a-yil, .a-plaka { line-height: 1; }
+    .a-fiyat { letter-spacing: -.01em; }
+    /* İndirim: üstü çizili REFERANS fiyat. Referans, mevzuata göre penceredeki
+       en düşük uygulanan fiyattır (sql/101) — istemcide hesaplanmaz.
+       ⚠️ Tarih aralığı BASILMAZ: bu bir kampanya değil, yeniden fiyatlama
+       (Göksenil kararı). Var olmayan bir kampanya süresi ima etmesin. */
+    /* ⚠️ FİYAT HER ZAMAN TAM ORTADA (Göksenil: "araç fiyatı mutlaka ortada
+       olmalı"). Önce referans fiyat satır içinde solda duruyordu ve asıl fiyatı
+       sağa kaydırıyordu; indirimli/indirimsiz araçlar arasında fiyat yeri
+       oynuyordu. Şimdi 3 sütunlu ızgara: kenar sütunlar EŞİT 1fr olduğu için
+       ortadaki fiyat, yanındaki metin ne kadar uzun olursa olsun merkezde
+       kalır. İndirim bilgisi sağ sütunda, fiyatı itmez.
+       Alt satır denemesi başarısızdı: üst şerit 25.6mm ve iki satır sığmadı,
+       fiyat 33mm'deki matbaa çizgisini kesiyordu (ölçüldü 10.9–39.3mm). */
+    /* ⚠️ minmax(0,1fr) — DÜZ "1fr" DEĞİL. CSS'te 1fr = minmax(auto,1fr), yani
+       sütun kendi içeriğinden DARALAMAZ; sağdaki indirim metni geniş olunca
+       sağ sütun şişip ortadaki fiyatı sola itiyordu (ölçüldü: 10.38mm sapma,
+       indirimli/indirimsiz araç arasında 10.73mm fark). minmax(0,...) ile iki
+       kenar sütun BİREBİR eşit kalır → fiyat her koşulda tam merkezde. */
+    .a-fiyat { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; }
+    .a-fiyat .f-ana { grid-column: 2; }
+    .a-fiyat .f-yan {
+      grid-column: 3; justify-self: start; text-align: left;
+      margin-left: .3em; line-height: 1.2; min-width: 0;
+    }
+    .a-fiyat .f-eski {
+      display: block; font-size: .26em; font-weight: 700; color: #8a8a8a;
+      text-decoration: line-through;
+    }
+    .a-fiyat .f-ind {
+      display: block; font-size: .26em; font-weight: 800; color: #047857;
+    }
+
+    /* Plaka — araç detayındaki TR rozetiyle AYNI görsel dil (arac-detay.js
+       plakaBadge). Buradaki fark: tüm ölçüler em cinsinden, böylece editörden
+       punto değiştirilince plaka bir bütün olarak büyüyüp küçülüyor.
+       Yazdırmada mavi alan solmasın diye print-color-adjust zaten açık. */
+    .a-plaka { display: flex; justify-content: center; letter-spacing: normal; }
+    .a-plaka .pl-kutu {
+      display: inline-flex; align-items: stretch; line-height: 1;
+      border: .07em solid #111; border-radius: .16em;
+      background: #fff; overflow: hidden;
+    }
+    .a-plaka .pl-tr {
+      background: #1e40af; color: #fff; font-weight: 800;
+      font-size: .34em; letter-spacing: .04em;
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: .5em .45em .55em; min-width: 2.4em;
+    }
+    .a-plaka .pl-no {
+      display: flex; align-items: center; color: #111;
+      padding: .14em .34em; letter-spacing: .06em; white-space: nowrap;
+    }
+    .a-model .ince { font-size: .78em; opacity: .75; }
+
+    /* Küçük üst başlık + büyük değer kalıbı (tramer / krediler) */
+    .a-kutu { display: flex; flex-direction: column; }
+    .a-kutu .ust {
+      font-size: .46em; font-weight: 700; color: #6a6a6a;
+      text-transform: uppercase; letter-spacing: .07em; margin-bottom: .18em;
+    }
+    .a-kutu .orta { font-size: .78em; }
+    .a-kutu .buyuk { font-size: 1em; }
+    /* Kredi bloğu hiyerarşisi: başlık büyük · tutar orta · TAKSİT en büyük.
+       En büyük rakamın taksit olması KASITLI (Göksenil: "müşteriye ne kadar
+       küçük sayı gösterirsek algısını o kadar değiştirebiliriz"). */
+    .a-kutu .ust-b {
+      font-size: .62em; font-weight: 800; color: #555;
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: .12em;
+    }
+    .a-kutu .tutar { font-size: .55em; font-weight: 700; color: #6a6a6a; line-height: 1.15; }
+    /* "Aylık Taksit" ara başlığı — altındaki büyük rakamın NE olduğunu söyler.
+       Ek olarak hizayı düzeltir: "/ AY" eki büyük satırdan çıktığı için iki
+       para satırı da saf rakam kalır ve üst üste ortalı görünür. */
+    .a-kutu .ara {
+      font-size: .44em; font-weight: 700; color: #7a7a7a;
+      text-transform: uppercase; letter-spacing: .06em; margin-top: .18em;
+    }
+    /* Peşinat + vade — taksitin altındaki ince satır */
+    .a-kutu .ek {
+      font-size: .42em; font-weight: 600; color: #555; letter-spacing: .01em;
+      margin-top: .1em;
+    }
+
+    /* Güven satırı — yalnız kanıtlanabilir maddeler (bkz. cam-etiketi.js) */
+    .a-guven { display: flex; flex-wrap: wrap; justify-content: center; gap: .3em 1.1em; }
+    .a-guven .g-madde { white-space: nowrap; }
+
+    /* Kredi dipnotu — küçük, gri, iki-üç satır sarar */
+    .a-not { line-height: 1.35; }
+
+    /* Finans kurumu şeridi — bireysel kredi ile matbaanın kısa çizgisi arası */
+    .a-serit {
+      display: flex; flex-direction: column; align-items: center;
+      border: .12em solid currentColor; border-radius: .45em;
+      padding: .35em .4em; line-height: 1.2;
+    }
+    .a-serit .s-ust { text-transform: uppercase; letter-spacing: .06em; }
+    .a-serit .s-alt {
+      font-size: .72em; font-weight: 600; opacity: .8; margin-top: .12em;
+      text-transform: none; letter-spacing: 0;
+    }
+
+    /* Ekspertiz şeması */
+    .a-eksp .eksp-svg svg { width: 100%; height: auto; display: block; }
+    /* Renk açıklaması — ŞEMANIN ALTINDA, yatay dizilim */
+    .a-efsane { display: flex; flex-wrap: wrap; justify-content: center; gap: .5em 1.4em; }
+    .a-efsane span { display: inline-flex; align-items: center; white-space: nowrap; }
+    .a-efsane i {
+      width: .95em; height: .95em; border-radius: .2em; display: inline-block;
+      border: .08em solid rgba(0,0,0,.35); margin-right: .4em;
+    }
+    /* Sayım rozetleri — renkleri şemadaki panel renkleriyle BİREBİR */
+    .a-sayim { display: flex; flex-wrap: wrap; justify-content: center; gap: .35em .5em; }
+    .a-sayim .rozet {
+      display: inline-block; padding: .18em .55em; border-radius: .32em;
+      line-height: 1.25; white-space: nowrap;
+    }
+
+    /* QR — araç sayfası (adres editörden ayarlanır) */
+    .a-qr svg { width: 100%; height: auto; display: block; }
+    .a-qr .qr-not {
+      display: block; text-align: center; margin-top: .35em;
+      font-size: .95em; color: #555; letter-spacing: .02em;
+    }
+
+    /* Yedek anahtar — VAR ☐ / YOK ☑ */
+    .a-anahtar { display: flex; align-items: center; justify-content: center; gap: .7em; }
+    .a-anahtar .ah-c { display: inline-flex; align-items: center; gap: .3em; }
+    .a-anahtar .kutucuk {
+      width: 1.05em; height: 1.05em; border: .12em solid var(--bordo); border-radius: .15em;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-style: normal; font-weight: 900; color: var(--bordo); line-height: 1;
+    }
+
+    /* --- Ekran araç çubuğu (yazdırılmaz) --- */
+    .cubuk {
+      position: sticky; top: 0; z-index: 10;
+      background: #1f1f1f; color: #fff; padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      font-size: 13px;
+    }
+    .cubuk button, .cubuk a {
+      background: #5f1818; color: #fff; border: 0; border-radius: 8px;
+      padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 13px;
+      text-decoration: none;
+    }
+    .cubuk label { display: inline-flex; align-items: center; gap: 5px; opacity: .85; }
+    .cubuk .ip { opacity: .6; }
+
+    /* Kalibrasyon ızgarası — 10mm aralık, yazdırılmaz */
+    .izgara {
+      position: absolute; inset: 0; pointer-events: none; display: none;
+      background-image:
+        repeating-linear-gradient(to right, rgba(0,120,255,.35) 0 .2mm, transparent .2mm 10mm),
+        repeating-linear-gradient(to bottom, rgba(0,120,255,.35) 0 .2mm, transparent .2mm 10mm);
+    }
+    body.izgara-acik .izgara { display: block; }
+    body.rehber-kapali .rehber { display: none; }
+
+    /* ---------- YERLEŞİM EDİTÖRÜ (master admin) ---------- */
+    .gizli { display: none !important; }
+    body.duzenle-modu .alan {
+      outline: .3mm dashed rgba(0,120,255,.5);
+      cursor: move; user-select: none;
+    }
+    body.duzenle-modu .alan:hover { outline-color: rgba(0,120,255,.9); background: rgba(0,120,255,.06); }
+    body.duzenle-modu .alan.secili {
+      outline: .5mm solid #0a84ff; background: rgba(10,132,255,.10);
+    }
+    #duzPanel {
+      position: fixed; right: 16px; top: 70px; z-index: 50; width: 230px;
+      background: #1f1f1f; color: #eee; border-radius: 12px; padding: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.5); font-size: 12px;
+    }
+    #duzPanel .dp-baslik { font-weight: 800; margin-bottom: 8px; font-size: 13px; }
+    #duzPanel select, #duzPanel input {
+      width: 100%; background: #2c2c2c; color: #fff; border: 1px solid #444;
+      border-radius: 6px; padding: 5px 7px; font-size: 12px;
+    }
+    #duzPanel .dp-satir { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    #duzPanel .dp-satir label { flex: 0 0 80px; opacity: .75; }
+    #duzPanel input[type=color] { padding: 1px; height: 26px; cursor: pointer; }
+    #duzPanel .dp-onay {
+      display: flex; align-items: center; gap: 6px; margin-top: 8px;
+      background: #2c2c2c; border-radius: 6px; padding: 6px 8px; cursor: pointer;
+    }
+    #duzPanel .dp-onay input { width: auto; }
+    #duzPanel .dp-qr { margin-top: 10px; }
+    #duzPanel .dp-qr label { flex: none; opacity: .75; }
+    #duzPanel .dp-ok { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 10px 0 8px; }
+    #duzPanel .dp-ok button {
+      background: #333; color: #fff; border: 0; border-radius: 6px; padding: 7px 0;
+      cursor: pointer; font-size: 14px;
+    }
+    #duzPanel .dp-ok button:hover { background: #444; }
+    #duzPanel .dp-alt { display: flex; gap: 6px; }
+    #duzPanel .dp-alt button {
+      flex: 1; background: #3a3a3a; color: #fff; border: 0; border-radius: 8px;
+      padding: 8px 6px; cursor: pointer; font-weight: 700; font-size: 11px;
+    }
+    #duzPanel .dp-kaydet { background: #1f7a3d !important; }
+    #duzPanel .dp-ip { opacity: .55; margin: 8px 0 0; line-height: 1.4; font-size: 10.5px; }
+    #duzPanel .dp-durum { margin: 6px 0 0; font-weight: 700; min-height: 14px; }
+
+    @media print {
+      #duzPanel { display: none !important; }
+      body.duzenle-modu .alan { outline: none !important; background: none !important; }
+      /* "Basma" işaretli alanlar kâğıda hiç çıkmaz (ekrandaki soluk hâli değil) */
+      .alan-gizli, body.duzenle-modu .alan-gizli { display: none !important; }
+      html, body { background: #fff; }
+      .cubuk, .rehber, .izgara { display: none !important; }
+      .sayfa {
+        margin: 0; box-shadow: none; width: 210mm; height: 297mm; page-break-after: always;
+        /* Ekspertiz renkleri ve bordo vurgular yazıcıda solmasın */
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      @page { size: A4 portrait; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="cubuk" id="cubuk">
+    <button id="yazdir">🖨 Yazdır</button>
+    <label><input type="checkbox" id="izgaraKutu" /> Izgara (10 mm)</label>
+    <label><input type="checkbox" id="rehberKutu" checked /> Matbaa rehberi</label>
+    <label>Belirginlik <input type="range" id="opaklik" min="15" max="100" value="60" style="width:90px" /></label>
+    <button id="basildiBtn" title="Bu etiketler yazdırılıp araca takıldıysa işaretle">✓ Etiket Basıldı</button>
+    <a id="duzenleBtn" class="gizli" href="#">⚙️ Yerleşimi Düzenle</a>
+    <span class="ip">Kâğıt A4 · ölçek %100 · kenar boşluğu YOK olarak yazdırın</span>
+    <span class="ip" id="durum"></span>
+  </div>
+
+  <div id="kok"></div>
+
+  <script type="module">
+    import { requireAuth } from './js/auth.js'
+    import { camEtiketiKur } from './js/cam-etiketi.js'
+    const d = await requireAuth({ sayfa: 'stok' })
+    if (d) await camEtiketiKur(d)
+  </script>
+</body>
+</html>

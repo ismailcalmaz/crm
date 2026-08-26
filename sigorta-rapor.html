@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sigorta Raporları — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">analytics</span> Sigorta Raporları</h2>
+          <p id="rpOzet" class="text-body-md text-on-surface-variant">Komisyon, iade sapması, süre ve şirket performansı.</p>
+        </div>
+        <button id="rpExcel" class="bg-surface border border-outline-variant text-on-surface-variant px-4 h-10 rounded-lg text-label-md font-bold hover:bg-surface-container flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">download</span> Excel'e Aktar</button>
+      </div>
+
+      <!-- Komisyon Analizi -->
+      <section class="space-y-4">
+        <h3 class="text-title-lg text-primary flex items-center gap-2 border-l-4 border-primary pl-2">Komisyon Analizi</h3>
+        <div id="rpKomOzet" class="grid grid-cols-1 md:grid-cols-2 gap-gutter"></div>
+        <div id="rpKomAkis" class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg"></div>
+        <div id="rpKomTablo"></div>
+      </section>
+
+      <!-- Ölçümler -->
+      <section class="space-y-4">
+        <h3 class="text-title-lg text-primary flex items-center gap-2 border-l-4 border-primary pl-2">Ölçümler</h3>
+        <div class="flex items-center gap-3 bg-surface-container-low border border-outline-variant text-on-surface-variant rounded-xl px-4 py-3">
+          <span class="material-symbols-outlined text-primary">info</span>
+          <span class="text-body-md">Bu ekran <b>ölçüm yapar, hedef koymaz</b>. Yeterli veri biriktiğinde eşikler belirlenecek.</span>
+        </div>
+        <div id="rpSureler" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+      </section>
+
+      <!-- Şirket Performansı -->
+      <section class="space-y-4">
+        <h3 class="text-title-lg text-primary flex items-center gap-2 border-l-4 border-primary pl-2">Şirket Performansı</h3>
+        <p class="text-label-md text-on-surface-variant -mt-2">Sapma = beklenen pro-rata iade ile gerçekleşen iade arasındaki fark.</p>
+        <div id="rpPerformans"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { raporKur } from './js/sigorta-rapor.js'
+    const d = await requireAuth({ sayfa: 'sigorta_rapor' })
+    if (d) { ustBarKur(d); await raporKur(d) }
+  </script>
+</body>
+</html>

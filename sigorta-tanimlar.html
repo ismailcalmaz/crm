@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tanımlar — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1400px] mx-auto w-full space-y-lg">
+
+      <!-- Başlık + salt-okur uyarısı -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2">
+            <span class="material-symbols-outlined">tune</span> Tanımlar
+          </h2>
+          <p class="text-body-md text-on-surface-variant">Şirketler, poliçe türleri, komisyon oranları ve sistem eşikleri.</p>
+        </div>
+        <div id="tanimSagAksiyon" class="flex flex-wrap items-center gap-sm"></div>
+      </div>
+
+      <div id="tanimBanner"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-gutter items-start">
+        <!-- Sol: bölüm listesi -->
+        <nav id="tanimNav" class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-2 space-y-0.5 lg:sticky lg:top-24"></nav>
+        <!-- Sağ: seçili bölüm içeriği -->
+        <section id="tanimIcerik" class="min-w-0 space-y-lg"></section>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { tanimlarKur } from './js/sigorta-tanimlar.js'
+    const d = await requireAuth({ sayfa: 'sigorta_tanimlar' })
+    if (d) { ustBarKur(d); await tanimlarKur(d) }
+  </script>
+</body>
+</html>

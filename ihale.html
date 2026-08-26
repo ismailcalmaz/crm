@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>İhale — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">İhale</h2>
+          <p class="text-body-md text-on-surface-variant">
+            Kendi stoğumuzu ihaleye çıkarma — işaretleme, onay, takip ve satış kaydı.
+            <span id="sayac" class="font-bold text-on-surface"></span>
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="cikarBtn" class="hidden bg-primary text-on-primary px-4 py-2 rounded-lg text-label-md font-bold items-center gap-2"><span class="material-symbols-outlined text-[18px]">gavel</span> İhaleye Çıkar</button>
+          <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+        </div>
+      </div>
+
+      <div id="kpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+      <div id="sekmeler"></div>
+      <div id="icerik"></div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { ihaleKur } from './js/ihale.js'
+    const d = await requireAuth({ sayfa: 'ihale' })
+    if (d) { ustBarKur(d); await ihaleKur(d) }
+  </script>
+</body>
+</html>

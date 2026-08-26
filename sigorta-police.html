@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poliçe Girişi — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1400px] mx-auto w-full space-y-lg">
+
+      <!-- Sayfa aksiyon çubuğu -->
+      <div class="sticky top-[68px] z-20 -mx-lg md:-mx-xl px-lg md:px-xl py-3 bg-surface/90 backdrop-blur border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">description</span> Poliçe Girişi</h2>
+          <p id="pgDurum" class="text-label-md text-on-surface-variant">Trafik önce, sonra kasko. TC girince müşteri otomatik dolar.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="pgTemizle" class="px-4 py-2.5 rounded-lg text-label-md font-bold text-on-surface-variant hover:bg-surface-container border border-outline-variant">Temizle</button>
+          <button id="pgKaydet" class="bg-primary text-on-primary px-5 py-2.5 rounded-lg text-label-md font-bold hover:opacity-90 shadow-sm shadow-primary/20 flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">save</span> Poliçeyi Kaydet</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-gutter">
+        <!-- Müşteri ve Araç -->
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">person</span> Müşteri ve Araç</h3>
+            <button id="pgYeniMusteri" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-primary-fixed text-primary hover:opacity-90">Yeni Giriş</button>
+          </div>
+          <div id="pgMusteriForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+          <div id="pgMusteriDurum" class="mt-3"></div>
+        </section>
+
+        <!-- Araç Bilgileri (TSB) -->
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">directions_car</span> Araç Bilgileri (TSB)</h3>
+            <span id="pgSistemRozet" class="hidden text-[11px] font-bold px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container">Sistemdeki Araç</span>
+          </div>
+          <div id="pgAracForm"></div>
+        </section>
+      </div>
+
+      <!-- Poliçe: Trafik / Kasko -->
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="flex border-b border-outline-variant px-lg pt-3 gap-6" id="pgSekmeler"></div>
+        <div id="pgPolicePanel" class="p-lg"></div>
+      </section>
+
+      <!-- Ekstra poliçeler -->
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-body-md font-bold text-on-surface">Ekstra poliçe yapıldı mı?</span>
+          <div id="pgEkstraCipler" class="flex items-center gap-2 flex-wrap"></div>
+        </div>
+        <div id="pgEkstraListe" class="mt-3 space-y-2"></div>
+      </section>
+
+      <!-- Son kesilen poliçeler -->
+      <section>
+        <h3 class="text-title-lg text-primary mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">history</span> Son Kesilen Poliçeler</h3>
+        <div id="pgListe"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { policeGirisKur } from './js/sigorta-police.js'
+    const d = await requireAuth({ sayfa: 'sigorta_policeler' })
+    if (d) { ustBarKur(d); await policeGirisKur(d) }
+  </script>
+</body>
+</html>

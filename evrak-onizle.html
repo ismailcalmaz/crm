@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Evrak Önizleme (geliştirici)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{margin:0;font-family:Arial,sans-serif}
+  .cubuk{padding:8px 12px;background:#6B1F2A;color:#fff;display:flex;gap:8px;align-items:center}
+  .cubuk button{padding:6px 12px;border:0;border-radius:6px;font-weight:700;cursor:pointer}
+  iframe{width:100%;height:calc(100vh - 44px);border:0;background:#fff}</style>
+</head>
+<body>
+<!-- Geliştirici aracı: belge düzenini oturtmak için gerçek üreticiyi örnek
+     veriyle çizer. DB'ye dokunmaz, giriş gerektirmez. -->
+<div class="cubuk">
+  <b>Evrak Önizleme</b>
+  <button id="bTutanak">Tutanak</button>
+  <select id="sMasak" style="padding:6px;border-radius:6px;border:0;font-weight:700"></select>
+  <label style="font-size:12px"><input type="checkbox" id="cSirket"> Müşteri şirket (SIRKET)</label>
+  <label style="font-size:12px"><input type="checkbox" id="cAnahtar"> Yedek anahtar YOK</label>
+  <button id="bPencere">Pop-up'ta aç</button>
+</div>
+<iframe id="cerceve"></iframe>
+<script type="module">
+import { belgeHtml, belgePencere, MASAK_TIPLERI } from './js/siparis-evrak.js'
+
+// ⚠️ BU DOSYA HALKA AÇIK YAYINLANIYOR (ismailcalmaz.github.io/crm).
+// Aşağıdaki veri TAMAMEN KURGUDUR ve öyle kalmalıdır. Gerçek bir müşteri
+// kaydını buraya YAPIŞTIRMA — ad, telefon, e-posta, adres, TCKN, şasi ve plaka
+// kişisel veridir; bir kez yayına girerse git geçmişinden de temizlenmesi gerekir.
+// (3 Ağu 2026'da gerçek bir kişinin TCKN'si dahil tam kimlik seti buradan sızdı.)
+const ORNEK = {
+  siparis: { id: 'ornek', sira: 412, anlasilan_tutar: 930000, noter_satis_tutari: 930000 },
+  arac: {
+    marka: 'FIAT', model: 'DOBLO', versiyon: 'COMBI SAFELINE 1.6 MJET', yil: 2022,
+    plaka: '35ABC123', sasi_no: 'ORNEKSASI00000000', motor_no: 'ORNEK0000',
+    km: 96200, renk: 'BEYAZ', yakit: 'DIZEL', vites: 'MANUEL',
+    kasko_kodu: 'A123456', yedek_anahtar: true,
+  },
+  musteri: { ad_soyad: 'ÖRNEK MÜŞTERİ', telefon: '0555 000 00 00', e_posta: 'ornek@example.com',
+             adres: 'Örnek Mah. 100. Sk. No 1 D 1, Gaziemir/İZMİR', tip: 'SAHIS' },
+  // TCKN 11111111110 = format doğrulamasından geçen, herkesçe bilinen TEST değeri.
+  kimlik: '11111111110',
+  danismanAd: 'Örnek Danışman',
+  benim: { id: null },
+  evraklar: [],
+  evrakDosya: { EKSPERTIZ_PDF: 'ornek/ekspertiz.pdf' },
+  listeFiyat: 980000,
+  kilit: false,
+  tanim: { YAKIT: { DIZEL: 'Dizel' }, VITES: { MANUEL: 'Manuel' }, RENK: { BEYAZ: 'Beyaz' } },
+  yenile: async () => {},
+}
+
+const ciz = (kod, tip) => {
+  const satir = { belge_no: kod === 'MASAK' ? 'MSK-2026-000184' : 'SDR-2026-000184' }
+  ORNEK.musteri.tip = document.getElementById('cSirket').checked ? 'SIRKET' : 'SAHIS'
+  ORNEK.arac.yedek_anahtar = !document.getElementById('cAnahtar').checked
+  ORNEK.musteri.dogum_tarihi = '1985-07-28'
+  ORNEK.musteri.vergi_dairesi = 'GAZİEMİR'
+  ORNEK.musteri.meslek_grubu = 'Serbest Meslek'
+  document.getElementById('cerceve').srcdoc = belgeHtml(ORNEK, kod, tip, satir)
+}
+const sel = document.getElementById('sMasak')
+sel.innerHTML = MASAK_TIPLERI.map(([k, a]) => `<option value="${k}">MASAK — ${a}</option>`).join('')
+sel.addEventListener('change', () => ciz('MASAK', sel.value))
+document.getElementById('cSirket').addEventListener('change', () => ciz('MASAK', sel.value))
+document.getElementById('cAnahtar').addEventListener('change', () => ciz('SATIS_DEVIR_TESLIM', null))
+// Panelin "Yazdır" akışının kullandığı GERÇEK pencere bileşeni
+document.getElementById('bPencere').addEventListener('click', () =>
+  belgePencere('Satış Devir Teslim Tutanağı', 'SDR-2026-000184',
+    `<iframe class="w-full h-full border-0 bg-white" srcdoc="${document.getElementById('cerceve').srcdoc.replace(/"/g, '&quot;')}"></iframe>`,
+    { yazdirilabilir: true, ikon: 'assignment_turned_in' }))
+document.getElementById('bTutanak').addEventListener('click', () => ciz('SATIS_DEVIR_TESLIM', null))
+ciz('MASAK', 'GERCEK_KISI')
+</script>
+</body>
+</html>

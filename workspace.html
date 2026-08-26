@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Çalışma Alanı — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="icerik stitch">
+    <div id="wsKok"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth } from './js/auth.js'
+    import { workspaceKur } from './js/workspace.js'
+    const d = await requireAuth()
+    if (d) workspaceKur(d)
+  </script>
+</body>
+</html>

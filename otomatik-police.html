@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Otomatik Poliçe Kaydı — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1280px] mx-auto w-full space-y-lg">
+
+      <div>
+        <h2 class="text-headline-md text-primary flex items-center gap-2">
+          <span class="material-symbols-outlined">cloud_upload</span> Otomatik Poliçe Kaydı
+        </h2>
+        <p class="text-body-md text-on-surface-variant">
+          Sigorta şirketinden gelen Excel / XML dosyasını sürükleyin — sistem okur, önce size gösterir, onayınızla kaydeder.
+        </p>
+      </div>
+
+      <!-- 1. Sürükle-bırak -->
+      <div id="opDrop"
+        class="border-2 border-dashed border-outline-variant rounded-2xl px-6 py-10 text-center cursor-pointer
+               hover:border-primary hover:bg-primary/5 transition-colors">
+        <span class="material-symbols-outlined text-[44px] text-on-surface-variant">upload_file</span>
+        <p class="text-title-md text-on-surface mt-2">Dosyayı buraya bırakın</p>
+        <p class="text-body-sm text-on-surface-variant mt-1">
+          veya tıklayıp seçin · <b>.xlsx</b> · <b>.xlsb</b> · <b>.xml</b>
+        </p>
+        <input id="opDosya" type="file" accept=".xlsx,.xlsb,.xls,.xlsm,.xml" multiple class="hidden" />
+      </div>
+
+      <!-- 2. Okuma / aktarım durumu -->
+      <div id="opDurum" class="hidden"></div>
+
+      <!-- 3. Önizleme + aktar -->
+      <div id="opOnizleme" class="hidden space-y-lg"></div>
+
+      <!-- 4. Eksik bilgi (maskeli/boş kimlik, plakasız) -->
+      <div id="opEksik"></div>
+
+      <!-- 5. Geçmiş aktarımlar -->
+      <div id="opGecmis"></div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { otomatikPoliceKur } from './js/otomatik-police.js'
+    const d = await requireAuth({ sayfa: 'sigorta_aktarim' })
+    if (d) { ustBarKur(d); await otomatikPoliceKur(d) }
+  </script>
+</body>
+</html>

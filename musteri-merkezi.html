@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Müşteri Merkezi — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div id="kok" class="p-lg md:p-xl max-w-[1440px] mx-auto w-full"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { musteriMerkeziKur } from './js/musteri-merkezi.js'
+    const d = await requireAuth({ sayfa: 'musteri_merkezi' })
+    if (d) { ustBarKur(d); await musteriMerkeziKur(d) }
+  </script>
+</body>
+</html>

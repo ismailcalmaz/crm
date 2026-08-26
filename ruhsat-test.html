@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ruhsat Okuma Teşhis — İÇ OS</title>
+<!-- ⚠️ css/style.css BİLEREK YÜKLENMİYOR. Orada FOUC önleme kuralı var:
+     `html:not(.tema-hazir) body > * { visibility: hidden }`
+     .tema-hazir sınıfını tema.js ekler. Bu sayfa app kabuğunu kullanmadığı
+     için temaKur() çağrılmıyor → sınıf hiç eklenmez → SAYFA BOMBOŞ kalırdı.
+     (Tam olarak bu oldu, v197'de. Kendi stilleri aşağıda, yeterli.) -->
+<style>
+  :root { --bordo:#5F1818; }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f7f8fa; color:#1a1c20 }
+  header { background:var(--bordo); color:#fff; padding:18px 24px }
+  header h1 { margin:0; font-size:18px; letter-spacing:.02em }
+  header p { margin:5px 0 0; opacity:.75; font-size:13px }
+  main { max-width:1240px; margin:0 auto; padding:20px 24px 60px }
+  .kutu { background:#fff; border:1px solid #e2e2e7; border-radius:14px; padding:18px; margin-bottom:18px }
+  .kutu h2 { margin:0 0 4px; font-size:13px; letter-spacing:.09em; text-transform:uppercase; color:var(--bordo) }
+  .kutu .alt { margin:0 0 14px; color:#6b6b73; font-size:12.5px }
+  #birak { border:2px dashed #cfc7c7; border-radius:14px; padding:34px; text-align:center; cursor:pointer; background:#fff; transition:.15s }
+  #birak.uzerinde, #birak:hover { border-color:var(--bordo); background:#5f18180a }
+  table { width:100%; border-collapse:collapse; font-size:13px }
+  th,td { border-bottom:1px solid #eceaea; padding:7px 9px; text-align:left; vertical-align:top }
+  th { background:#faf8f8; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#6b6b73 }
+  td.deger { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600 }
+  .rozet { display:inline-block; padding:1px 7px; border-radius:99px; font-size:11px; font-weight:700 }
+  .qr { background:#dcf5e3; color:#137333 }
+  .ocr { background:#fff3d6; color:#9a6700 }
+  .yok { background:#f1eeee; color:#8a8a93 }
+  pre { background:#faf8f8; border:1px solid #eceaea; border-radius:10px; padding:12px; font-size:12px;
+        max-height:340px; overflow:auto; white-space:pre-wrap; word-break:break-word }
+  .satir { display:flex; gap:18px; flex-wrap:wrap }
+  .satir > * { flex:1 1 420px; min-width:0 }
+  #onizle img { max-width:100%; border-radius:10px; border:1px solid #e2e2e7 }
+  .buton { background:var(--bordo); color:#fff; border:0; padding:9px 16px; border-radius:9px; font-weight:700; cursor:pointer; font-size:13px }
+  .ilerleme { height:5px; background:#eee; border-radius:99px; overflow:hidden; margin-top:10px }
+  .ilerleme span { display:block; height:100%; background:var(--bordo); width:0; transition:width .2s }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ruhsat Okuma Teşhis Ekranı</h1>
+  <p>Ruhsatı bırak → QR'ın <b>kesin</b> verdikleri ile OCR'ın basılı metinden <b>tahmin</b> ettiklerini yan yana gör.
+     Hangi alan doğru geliyorsa söyle, forma onu bağlayayım.</p>
+</header>
+
+<main>
+  <div id="birak">
+    <div style="font-size:34px">🪪</div>
+    <p style="margin:8px 0 4px; font-weight:700">Ruhsatı buraya sürükle</p>
+    <p style="margin:0; color:#6b6b73; font-size:12.5px">Fotoğraf veya PDF · tıklayarak da seçebilirsin · belge bilgisayarından çıkmaz</p>
+    <input id="dosya" type="file" accept="image/*,application/pdf" hidden />
+    <div class="ilerleme" id="bar" style="display:none"><span></span></div>
+    <p id="durum" style="margin:10px 0 0; font-size:12.5px; color:#6b6b73"></p>
+  </div>
+
+  <div id="sonuc" style="display:none">
+    <div class="satir">
+      <div class="kutu">
+        <h2>1 · QR kodundan (KESİN)</h2>
+        <p class="alt">Ruhsat QR'ı yalnızca bu üç alanı taşır. Doğrudan kullanılabilir.</p>
+        <table id="qrTablo"></table>
+        <p class="alt" style="margin:12px 0 0">Ham yük:</p>
+        <pre id="qrHam" style="max-height:70px"></pre>
+      </div>
+      <div class="kutu">
+        <h2>2 · Belge önizleme</h2>
+        <p class="alt">Okunan görüntü — QR bulunamadıysa netlik/parlama buradan anlaşılır.</p>
+        <div id="onizle"></div>
+      </div>
+    </div>
+
+    <div class="kutu">
+      <h2>3 · OCR aday alanları (TAHMİN — kontrol et)</h2>
+      <p class="alt">Basılı metinden çıkarılmaya çalışıldı. <b>Doğru olanları bana söyle, forma bağlayayım.</b>
+         Yanlış/boş olanları da söyle, deseni düzelteyim.</p>
+      <table id="ocrTablo"></table>
+    </div>
+
+    <div class="kutu">
+      <h2>4 · OCR ham metni</h2>
+      <p class="alt">Motorun belgede gördüğü her şey. Bir alan yukarıda çıkmadıysa, burada var mı diye bak.</p>
+      <pre id="ocrHam"></pre>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { ruhsatQrOku } from './js/ruhsat-qr.js'
+import { belgeSatirlari } from './js/tramer-ocr.js'
+import { ruhsatAlanCikar, RUHSAT_ALANLAR } from './js/ruhsat-ocr.js'
+
+const $ = s => document.querySelector(s)
+const birak = $('#birak'), dosya = $('#dosya'), durum = $('#durum'), bar = $('#bar')
+
+birak.addEventListener('click', () => dosya.click())
+dosya.addEventListener('change', e => { if (e.target.files[0]) isle(e.target.files[0]) })
+;['dragenter','dragover'].forEach(t => birak.addEventListener(t, e => { e.preventDefault(); birak.classList.add('uzerinde') }))
+;['dragleave','drop'].forEach(t => birak.addEventListener(t, e => { e.preventDefault(); birak.classList.remove('uzerinde') }))
+birak.addEventListener('drop', e => { const f = e.dataTransfer?.files?.[0]; if (f) isle(f) })
+
+const kacir = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+
+async function isle(f) {
+  $('#sonuc').style.display = 'none'
+  bar.style.display = 'block'; bar.firstElementChild.style.width = '8%'
+  durum.textContent = 'QR aranıyor…'
+
+  // Önizleme
+  $('#onizle').innerHTML = f.type?.startsWith('image/')
+    ? `<img src="${URL.createObjectURL(f)}" alt="ruhsat">`
+    : `<p style="color:#6b6b73">PDF: ${kacir(f.name)}</p>`
+
+  // 1) QR
+  let qr
+  try { qr = await ruhsatQrOku(f) } catch (e) { qr = { ok:false, hata:e.message } }
+  bar.firstElementChild.style.width = '30%'
+  $('#qrHam').textContent = qr.ham || '(QR bulunamadı)'
+  $('#qrTablo').innerHTML = `<tr><th>Alan</th><th>Değer</th><th>Kaynak</th></tr>` + [
+    ['Plaka', qr.plaka], ['Belge seri no', qr.seri],
+    [`Sahip kimlik (${qr.kimlikTipi || '—'})`, qr.kimlik],
+  ].map(([a, d]) => `<tr><td>${kacir(a)}</td><td class="deger">${kacir(d || '—')}</td>
+      <td><span class="rozet ${d ? 'qr' : 'yok'}">${d ? 'QR · kesin' : 'yok'}</span></td></tr>`).join('')
+
+  // 2) OCR
+  durum.textContent = 'Basılı metin okunuyor (OCR)… ilk çalıştırmada dil paketi iner, biraz sürebilir.'
+  let satirlar = []
+  try {
+    const r = await belgeSatirlari(f, p => {
+      bar.firstElementChild.style.width = (30 + p * 65) + '%'
+      durum.textContent = `OCR %${Math.round(p * 100)}`
+    })
+    satirlar = r.satirlar || []
+  } catch (e) {
+    durum.textContent = 'OCR hatası: ' + e.message
+  }
+  bar.firstElementChild.style.width = '100%'
+  $('#ocrHam').textContent = satirlar.join('\n') || '(metin okunamadı)'
+
+  const alanlar = ruhsatAlanCikar(satirlar, qr)
+  $('#ocrTablo').innerHTML = `<tr><th style="width:210px">Alan</th><th>Bulunan değer</th><th style="width:130px">Kaynak</th><th>Not</th></tr>` +
+    RUHSAT_ALANLAR.map(a => {
+      const v = alanlar[a.key]
+      const kaynak = v?.kaynak || 'yok'
+      const rozet = kaynak === 'QR' ? 'qr' : kaynak === 'OCR' ? 'ocr' : 'yok'
+      return `<tr><td>${kacir(a.ad)}<br><span style="color:#9a9a9a;font-size:11px">${kacir(a.kod || '')}</span></td>
+        <td class="deger">${kacir(v?.deger || '—')}</td>
+        <td><span class="rozet ${rozet}">${kaynak === 'yok' ? 'bulunamadı' : kaynak}</span></td>
+        <td style="color:#6b6b73;font-size:12px">${kacir(a.not || '')}</td></tr>`
+    }).join('')
+
+  durum.textContent = 'Bitti — aşağıdaki tabloyu kontrol et.'
+  bar.style.display = 'none'
+  $('#sonuc').style.display = 'block'
+}
+</script>
+</body>
+</html>

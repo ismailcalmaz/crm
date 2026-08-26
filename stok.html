@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stok — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Stok Merkezi</h2>
+          <p class="text-body-md text-on-surface-variant">CRM iç envanteri (alış → stok → yayın). <span id="sayac" class="font-bold text-on-surface"></span></p>
+        </div>
+        <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+      </div>
+
+      <!-- KPI -->
+      <div id="kpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+
+      <!-- Filtre bento — Göksenil, 15 Ağu 2026: "arama yerini tıklayınca
+           alta doğru açılan bir alan yapalım, araçları daha kolay görsünler."
+           Kapalı başlar; açıldığında seçim localStorage'da hatırlanır.
+           ⚠️ Başlıkta AKTİF FİLTRE SAYACI var: panel kapalıyken filtre açık
+              kalırsa liste kısa görünür ve sebebi görünmez olurdu. -->
+      <details id="filtrePanel" class="group bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <summary class="cursor-pointer select-none px-md py-3 flex items-center gap-2 text-label-md font-bold text-on-surface hover:bg-surface-container-low list-none [&::-webkit-details-marker]:hidden">
+          <span class="material-symbols-outlined text-[20px] text-primary">search</span>
+          <span>Ara ve Süz</span>
+          <span id="filtreOzet" class="text-label-sm font-bold text-on-primary bg-primary rounded-full px-2 py-0.5 hidden"></span>
+          <!-- Ok yönünü stok.js değiştirir (expand_more ↔ expand_less);
+               Tailwind CDN `group-open:rotate-180` üretmiyor, ölçüldü. -->
+          <span class="material-symbols-outlined text-[20px] ml-auto text-on-surface-variant" id="filtreOk">expand_more</span>
+        </summary>
+        <div class="p-md pt-0">
+        <div class="flex flex-wrap items-end gap-md">
+          <div class="flex-1 min-w-[160px]">
+            <label class="block text-label-sm text-on-surface-variant mb-1">Ara</label>
+            <input id="arama" type="search" autocomplete="off" placeholder="Marka, model, plaka…" class="w-full border border-outline-variant rounded-lg px-3 py-1.5 text-body-md bg-white focus:border-primary focus:ring-1 focus:ring-primary" />
+          </div>
+          <div class="flex-1 min-w-[130px]"><label class="block text-label-sm text-on-surface-variant mb-1">Marka</label><select id="fMarka" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[130px]"><label class="block text-label-sm text-on-surface-variant mb-1">Model</label><select id="fModel" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[100px]"><label class="block text-label-sm text-on-surface-variant mb-1">Yıl</label><select id="fYil" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[110px]"><label class="block text-label-sm text-on-surface-variant mb-1">Yakıt</label><select id="fYakit" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[110px]"><label class="block text-label-sm text-on-surface-variant mb-1">Vites</label><select id="fVites" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[120px]"><label class="block text-label-sm text-on-surface-variant mb-1">Durum</label><!-- Seçenekler stok.js'te ARAC_DURUM_GRUP'tan doldurulur (sql/86 ile birebir) --><select id="fDurum" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <div class="flex-1 min-w-[120px]"><label class="block text-label-sm text-on-surface-variant mb-1">Alış KDV</label><select id="fKdv" class="w-full border border-outline-variant rounded-lg py-1.5 px-2 text-body-md bg-white"></select></div>
+          <button id="temizle" class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md px-lg py-1.5 rounded-lg border border-outline-variant transition-colors">Temizle</button>
+          <!-- Filtrelenmiş listenin tamamı için toplu cam etiketi çıktısı -->
+          <button id="camEtiket" class="bg-primary text-on-primary font-label-md px-lg py-1.5 rounded-lg transition-colors hover:opacity-90">Cam Etiketi</button>
+          <!-- Toplu fiyat: yalnız fiyat yetkisi olanda görünür (stok.js kaldırır) -->
+          <button id="topluFiyat" class="bg-surface-container-low border border-primary/40 text-primary font-label-md px-lg py-1.5 rounded-lg transition-colors hover:bg-primary/5">Toplu Fiyat</button>
+        </div>
+        <div class="flex flex-wrap items-end gap-md mt-md">
+          <div class="min-w-[150px]"><label class="block text-label-sm text-on-surface-variant mb-1">Fiyat (₺)</label>
+            <div class="flex items-center gap-1.5">
+              <input id="fFiyatMin" inputmode="numeric" placeholder="min" class="w-24 border border-outline-variant rounded-lg px-2 py-1.5 text-body-md bg-white" />
+              <span class="text-on-surface-variant">–</span>
+              <input id="fFiyatMax" inputmode="numeric" placeholder="max" class="w-24 border border-outline-variant rounded-lg px-2 py-1.5 text-body-md bg-white" />
+            </div>
+          </div>
+          <div class="min-w-[150px]"><label class="block text-label-sm text-on-surface-variant mb-1">KM (bin)</label>
+            <div class="flex items-center gap-1.5">
+              <input id="fKmMin" inputmode="numeric" placeholder="min" class="w-20 border border-outline-variant rounded-lg px-2 py-1.5 text-body-md bg-white" />
+              <span class="text-on-surface-variant">–</span>
+              <input id="fKmMax" inputmode="numeric" placeholder="max" class="w-20 border border-outline-variant rounded-lg px-2 py-1.5 text-body-md bg-white" />
+            </div>
+          </div>
+        </div>
+        </div>
+      </details>
+
+      <!-- Araç talep-yoğunluğu ipucu -->
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">directions_car</span> Envanter Listesi</h3>
+        <div id="gorunum" class="inline-flex rounded-lg border border-outline-variant overflow-hidden bg-surface-container-low">
+          <button data-gorunum="kart" class="px-2.5 py-1.5 text-primary" title="Kart görünümü"><span class="material-symbols-outlined text-[18px]">grid_view</span></button>
+          <button data-gorunum="tablo" class="px-2.5 py-1.5 border-l border-outline-variant text-on-surface-variant" title="Tablo görünümü"><span class="material-symbols-outlined text-[18px]">view_list</span></button>
+        </div>
+      </div>
+
+      <!-- Liste -->
+      <div id="liste"></div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { stokKur } from './js/stok.js'
+    const d = await requireAuth({ sayfa: 'stok' })
+    if (d) { ustBarKur(d); await stokKur(d) }
+  </script>
+</body>
+</html>

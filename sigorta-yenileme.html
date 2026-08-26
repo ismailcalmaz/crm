@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yenilemeler — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div>
+        <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">autorenew</span> Yenilemeler</h2>
+        <p id="ynOzet" class="text-body-md text-on-surface-variant">Bitişi yaklaşan poliçeler — arama kuyruğu.</p>
+      </div>
+
+      <div id="ynKpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+
+      <div class="flex flex-wrap gap-2" id="ynSekmeler"></div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-gutter items-start">
+        <div id="ynListe"></div>
+        <aside id="ynDetay" class="hidden xl:block bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg sticky top-24 min-h-[300px]"></aside>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { yenilemeKur } from './js/sigorta-yenileme.js'
+    const d = await requireAuth({ sayfa: 'sigorta_yenileme' })
+    if (d) { ustBarKur(d); await yenilemeKur(d) }
+  </script>
+</body>
+</html>

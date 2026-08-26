@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Havuz — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <!-- Başlık -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Havuz</h2>
+          <p class="text-body-md text-on-surface-variant">İş kapma ekranı — sahipsiz işi kap, kendi işlerini yönet.</p>
+        </div>
+        <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+      </div>
+
+      <!-- KPI şeridi -->
+      <section id="havuzKpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></section>
+
+      <!-- Kontrol çubuğu: sekme + arama -->
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div id="havuzSekme" class="inline-flex rounded-lg border border-outline-variant overflow-hidden bg-surface-container-low text-label-md font-bold">
+          <button data-sekme="sahipsiz" class="px-4 py-2 flex items-center gap-2 bg-primary text-on-primary"><span class="material-symbols-outlined text-[18px]">inbox</span> Sahipsiz <span id="sekmeSahipsizSay" class="ml-0.5 bg-white/25 px-1.5 rounded-full text-[11px]"></span></button>
+          <button data-sekme="benim" class="px-4 py-2 flex items-center gap-2 border-l border-outline-variant text-on-surface-variant"><span class="material-symbols-outlined text-[18px]">assignment_ind</span> Benim İşlerim <span id="sekmeBenimSay" class="ml-0.5 bg-surface-container-high px-1.5 rounded-full text-[11px]"></span></button>
+        </div>
+        <div class="relative flex-1 min-w-[200px] max-w-md">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+          <input id="havuzAra" placeholder="Müşteri, telefon veya araç ara…" class="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-9 pr-3 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+      </div>
+
+      <!-- Filtre çipleri -->
+      <div id="havuzFiltreler" class="flex flex-wrap items-center gap-sm"></div>
+
+      <!-- Split: kart listesi (sol) + detay (sağ) -->
+      <div class="flex gap-gutter items-start">
+        <div class="flex-1 min-w-0 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+          <div id="havuzListe" class="overflow-auto p-3 space-y-2.5" style="max-height:calc(100vh - 300px)"></div>
+        </div>
+        <aside id="havuzDetay" class="hidden xl:flex xl:w-[400px] shrink-0 flex-col bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden self-stretch" style="max-height:calc(100vh - 300px)"></aside>
+      </div>
+
+    </div>
+
+    <!-- Mobil detay örtüsü -->
+    <div id="havuzDetayKatman" class="fixed inset-0 bg-black/40 z-40 hidden"></div>
+    <!-- Sahiplen toast'ı -->
+    <div id="havuzToast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-on-surface text-white rounded-full px-5 py-3 flex items-center gap-2 shadow-2xl text-label-md font-bold"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { havuzKur } from './js/havuz.js'
+    const d = await requireAuth({ sayfa: 'havuz' })
+    if (d) { ustBarKur(d); await havuzKur(d) }
+  </script>
+</body>
+</html>

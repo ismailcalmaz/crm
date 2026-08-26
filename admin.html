@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Master Admin — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1600px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-headline-md text-primary">Master Admin Ayarları</h2>
+          <p class="text-body-md text-on-surface-variant">Sistem kullanıcılarını yönetin; rol, durum ve sayfa yetkilerini belirleyin.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="adminDurum" class="text-label-md text-secondary font-bold"></span>
+          <button id="yeniBtn" class="bg-primary text-white px-lg py-sm rounded-lg text-label-md font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"><span class="material-symbols-outlined text-[20px]">person_add</span> Yeni Personel Ekle</button>
+        </div>
+      </div>
+
+      <!-- SİSTEM SAĞLIĞI (sql/212) — Göksenil, 17 Ağu 2026.
+           En üstte: sayfa açılır açılmaz görünsün, personel listesini
+           geçmek için kaydırmak gerekmesin.
+           ⚠️ Entegrasyon kartlarında ölçüt TAŞIMA değil ETKİdir. pg_net'in
+              "timeout" yazması tek başına arıza demek değil — fonksiyon
+              arkada işini bitirebiliyor (17 Ağu'da bu yanlış teşhis kondu). -->
+      <section class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="p-md border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
+          <h3 class="text-title-lg text-primary flex items-center gap-2">
+            <span class="material-symbols-outlined">monitor_heart</span> Sistem Sağlığı</h3>
+          <div class="flex items-center gap-3">
+            <span id="saglikZaman" class="text-label-sm text-on-surface-variant"></span>
+            <button id="saglikYenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-3 py-1.5 rounded-lg text-label-md font-bold flex items-center gap-1.5 hover:bg-surface-container transition-colors">
+              <span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+          </div>
+        </div>
+        <div id="saglik" class="p-md"></div>
+      </section>
+
+      <!-- ŞİFRE TESLİM KUTUSU — şifre kaydedildikten SONRA burada kalır.
+           Sunucuda hash'li tutulduğu için geri alınamaz; kart hemen kapanınca
+           üretilen şifre ekrandan siliniyor ve kimse göremiyordu. Bu kutu
+           kullanıcı "Kapat" demeden kaybolmaz. -->
+      <div id="sifreTeslim" class="gizli mb-lg rounded-xl border-2 border-[#1f7a3d] bg-[#F0FDF4] p-lg custom-shadow">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <h3 class="text-title-md font-bold text-[#166534]">✓ Şifre belirlendi — kişiye ilet</h3>
+          <button id="sifreTeslimKapat" type="button" class="border border-[#1f7a3d]/40 px-3 py-1.5 rounded-lg text-label-md font-bold text-[#166534] hover:bg-[#dcfce7]">Kapat</button>
+        </div>
+        <p class="text-body-sm text-[#166534] mb-3">Bu şifre <b>bir daha gösterilemez</b> (sunucuda şifrelenmiş saklanır). Kaydetmeden kapatma.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-label-sm text-on-surface-variant mb-1">E-posta</label>
+            <div class="flex items-center gap-2">
+              <code id="stEposta" class="flex-1 bg-white border border-outline-variant rounded-lg px-3 py-2 text-body-md font-bold break-all"></code>
+              <button type="button" data-kopya="stEposta" class="px-3 py-2 rounded-lg border border-outline-variant bg-white text-label-md font-bold hover:bg-surface-container">Kopyala</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-label-sm text-on-surface-variant mb-1">Şifre</label>
+            <div class="flex items-center gap-2">
+              <code id="stSifre" class="flex-1 bg-white border border-outline-variant rounded-lg px-3 py-2 text-title-md font-bold tracking-wider"></code>
+              <button type="button" data-kopya="stSifre" class="px-3 py-2 rounded-lg bg-primary text-on-primary text-label-md font-bold hover:opacity-90">Kopyala</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ekleme/düzenleme formu (gizli) -->
+      <div id="personelKart" class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow p-lg gizli">
+        <div class="flex items-center justify-between mb-4">
+          <h3 id="formBaslik" class="text-title-lg text-primary">Yeni Personel</h3>
+          <button id="iptalBtn" type="button" class="border border-outline-variant px-4 py-2 rounded-lg text-label-md font-bold text-on-surface-variant hover:bg-surface-container-low min-h-[44px]">Kapat</button>
+        </div>
+        <form id="personelForm" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">E-posta (Google giriş) *</span>
+              <input id="emailAlan" name="email" type="email" required class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]" />
+            </label>
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">Ad Soyad *</span>
+              <input name="ad_soyad" required class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]" />
+            </label>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">Rol</span>
+              <!-- Seçenekler admin.js ROLLER'dan doldurulur (sql/83 CHECK ile birebir) -->
+              <select id="rolSec" name="rolSec" class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]"></select>
+            </label>
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">Müdürlük (rolden bağımsız)</span>
+              <!-- Seçenekler admin.js MUDUR_BIRIMLERI'nden doldurulur (sql/85) -->
+              <select id="mudurSec" name="mudurSec" class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]"></select>
+              <span class="block text-label-sm text-on-surface-variant mt-1">Müdür yetkisi rolü değiştirmez; onay/karar hakkı ve o birimin bildirim hedefi olur.</span>
+            </label>
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">Telefon</span>
+              <input name="telefon" type="tel" inputmode="tel" autocomplete="tel" class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]" />
+            </label>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+            <label class="block">
+              <span class="text-label-md font-bold text-on-surface-variant">Fiyat Aralığı (opsiyonel)</span>
+              <input name="fiyat_araligi" placeholder="örn: 1-1.4M" class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px]" />
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer min-h-[44px]">
+              <input type="checkbox" name="aktif" checked class="w-5 h-5 accent-[#5f1818]" />
+              <span class="text-label-md font-bold text-on-surface">Aktif</span>
+            </label>
+          </div>
+
+          <!-- Şirket Google hesabı OLMAYAN personel (bilgi işlem / operasyon) -->
+          <div class="rounded-xl border border-dashed border-outline-variant p-4 bg-surface-container-low/40">
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="sifreliAc" class="w-5 h-5 accent-[#5f1818]" />
+              <span class="text-label-md font-bold text-on-surface">Şirket e-postası yok — şifreyle giriş yapsın</span>
+            </label>
+            <p class="text-label-sm text-on-surface-variant mt-1">
+              Google hesabı olmayan personel için sunucuda hesap açılır (auth kaydı + personel satırı birlikte).
+              Şifreyi kişiye <b>sen</b> iletirsin; sistem e-posta göndermez.
+            </p>
+            <div id="sifreAlanlar" class="hidden mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <label class="block">
+                <span class="text-label-md font-bold text-on-surface-variant">Şifre (en az 8 karakter)</span>
+                <input id="sifreAlan" type="text" autocomplete="off" minlength="8"
+                  class="mt-1 w-full bg-surface border border-outline-variant rounded-lg px-4 py-2.5 text-body-md min-h-[44px] font-mono" />
+              </label>
+              <button type="button" id="sifreUret" class="border border-outline-variant px-4 py-2.5 rounded-lg text-label-md font-bold text-primary hover:bg-surface-container-low min-h-[44px]">Güçlü şifre üret</button>
+            </div>
+          </div>
+          <div>
+            <p class="text-label-md font-bold text-on-surface-variant mb-2">Görebileceği Sayfalar</p>
+            <div id="izinler" class="flex flex-wrap gap-x-5 gap-y-2.5"></div>
+            <p class="text-label-sm text-on-surface-variant mt-2">Rol değiştirince varsayılan izinler önerilir; elle değiştirebilirsin.</p>
+          </div>
+          <div class="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant">
+            <span id="formDurum" class="text-label-sm text-on-surface-variant"></span>
+            <button type="submit" class="bg-primary text-on-primary px-lg py-sm rounded-lg text-label-md font-bold min-h-[44px]">Kaydet</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Görev sayaçları -->
+      <section id="adminKpi" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></section>
+
+      <div class="relative max-w-md">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+        <input id="personelAra" placeholder="Personel ara (ad / e-posta)…" class="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-9 pr-3 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      </div>
+
+      <!-- Personel: kart listesi + sağ detay -->
+      <div class="flex gap-gutter items-start">
+        <div class="w-full xl:w-[380px] shrink-0 bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden">
+          <div class="px-lg py-3 border-b border-outline-variant flex items-center justify-between">
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">badge</span> Personel</h3>
+            <span id="personelSayac" class="text-label-sm text-on-surface-variant"></span>
+          </div>
+          <div id="personelListe" class="overflow-auto p-2.5 space-y-2" style="max-height:calc(100vh - 340px)"></div>
+        </div>
+        <aside id="personelDetay" class="hidden xl:flex flex-1 min-w-0 flex-col bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden self-stretch" style="max-height:calc(100vh - 340px)"></aside>
+      </div>
+      <div id="personelDetayKatman" class="fixed inset-0 bg-black/40 z-40 hidden"></div>
+
+      <!-- Menü Yerleşimi (modül düzeni) -->
+      <section class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="p-md border-b border-outline-variant flex justify-between items-start gap-3">
+          <div>
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">dashboard_customize</span> Menü Yerleşimi</h3>
+            <p class="text-label-md text-on-surface-variant mt-0.5">Her sayfanın hangi çalışma alanında (modül) ve hangi sırada görüneceğini ayarlayın. Değişiklik <b>tüm kullanıcıları</b> etkiler; kimin hangi sayfayı görebildiği ayrı olarak kişi kartından yönetilir.</p>
+          </div>
+          <span id="menuDurum" class="text-label-md font-bold shrink-0"></span>
+        </div>
+        <div id="menuYerlesim" class="p-lg grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md"></div>
+        <div class="px-lg pb-lg -mt-1">
+          <button id="menuVarsayilanBtn" class="text-label-md font-bold text-on-surface-variant hover:text-primary inline-flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">restart_alt</span> Varsayılan düzene döndür</button>
+        </div>
+      </section>
+
+      <!-- Sürüm notu / Duyuru yayınla -->
+      <section class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="p-md border-b border-outline-variant flex justify-between items-center">
+          <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">campaign</span> Sürüm Notu / Duyuru Yayınla</h3>
+          <span id="surumDurum" class="text-label-md font-bold"></span>
+        </div>
+        <div class="p-lg space-y-md">
+          <p class="text-body-md text-on-surface-variant">Yazdığın duyuru <b>tüm aktif kullanıcılara bildirim</b> olarak düşer ve <a href="surum.html" class="text-primary font-bold underline">Yenilikler</a> sayfasında listelenir.</p>
+          <form id="surumForm" class="space-y-md">
+            <div class="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-md">
+              <div class="alan"><label>Sürüm etiketi (ops.)</label><input id="surumEtiket" placeholder="örn v1.4" /></div>
+              <div class="alan"><label>Başlık *</label><input id="surumBaslik" required placeholder="örn Talep–Stok eşleştirme geldi" /></div>
+            </div>
+            <div class="alan tam">
+              <label>İçerik * <span class="soluk">(her satır bir madde; başına - koyarsan liste olur)</span></label>
+              <textarea id="surumIcerik" rows="5" required placeholder="- Talep ekranından uygun stok önerileri&#10;- WhatsApp tek tık mesaj&#10;- Müşteri 360° kartı"></textarea>
+            </div>
+            <div class="flex justify-end">
+              <button type="submit" id="surumYayinBtn" class="bg-primary text-white px-lg py-sm rounded-lg text-label-md font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"><span class="material-symbols-outlined text-[20px]">send</span> Yayınla ve Herkese Bildir</button>
+            </div>
+          </form>
+          <div>
+            <h4 class="text-label-md font-bold text-on-surface-variant mb-2">Yayınlanan notlar</h4>
+            <div id="surumGecmis" class="space-y-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- İşlem Geçmişi (audit) — YALNIZ master admin görür (RLS sql/92) -->
+      <section class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="p-md border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
+          <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">history</span> İşlem Geçmişi</h3>
+          <div class="flex items-center gap-2 flex-wrap">
+            <select id="adTur" class="bg-surface border border-outline-variant rounded-lg px-3 py-1.5 text-body-md"></select>
+            <select id="adKisi" class="bg-surface border border-outline-variant rounded-lg px-3 py-1.5 text-body-md"></select>
+            <button id="adYenile" class="border border-outline-variant px-3 py-1.5 rounded-lg text-label-md font-bold text-on-surface-variant hover:bg-surface-container-low">Yenile</button>
+          </div>
+        </div>
+        <div id="auditListe" class="p-md"></div>
+        <div class="px-md pb-md">
+          <details>
+            <summary class="cursor-pointer text-label-md font-bold text-on-surface-variant hover:text-primary">Giriş / Çıkış Kayıtları</summary>
+            <div id="girisListe" class="mt-3"></div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Teknik bilgiler -->
+      <section class="bg-surface-container-lowest rounded-xl border border-outline-variant custom-shadow overflow-hidden">
+        <div class="p-md border-b border-outline-variant">
+          <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">settings</span> Teknik / Config Bilgileri</h3>
+        </div>
+        <div id="teknik"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { adminKur } from './js/admin.js'
+    const d = await requireAuth({ master: true })
+    if (d) { ustBarKur(d); await adminKur(d) }
+  </script>
+</body>
+</html>

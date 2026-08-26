@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ekspertiz PDF Testi — CRM</title>
+  <style>
+    :root { --bordo:#5f1818; --gri:#c8c8c8; }
+    body { font-family:'Inter',system-ui,sans-serif; margin:0; background:#f9f9fe; color:#1a1c20; }
+    header { background:var(--bordo); color:#fff; padding:16px 24px; }
+    header h1 { margin:0; font-size:18px; }
+    .wrap { max-width:1100px; margin:24px auto; padding:0 16px; display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    @media (max-width:820px){ .wrap{ grid-template-columns:1fr; } }
+    .kart { background:#fff; border:1px solid #dbc0c1; border-radius:12px; padding:20px; }
+    .yukle { display:inline-flex; align-items:center; gap:8px; background:var(--bordo); color:#fff; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:600; }
+    #svgKap svg { width:100%; height:auto; max-height:520px; }
+    .rozet { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:700; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    td { padding:6px 8px; border-bottom:1px solid #eee; }
+    .lejant span { display:inline-flex; align-items:center; gap:5px; margin-right:14px; font-size:12px; }
+    .kutu { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid #999; }
+    .sor { background:#fff3cd; color:#8a6d00; }
+    .note { font-size:12px; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <header><h1>Ekspertiz PDF Testi — template matching (vision yok)</h1></header>
+  <div class="wrap">
+    <div class="kart">
+      <label class="yukle">📄 Ekspertiz PDF Yükle<input id="dosya" type="file" accept="application/pdf" hidden /></label>
+      <div id="ozet" style="margin-top:16px"></div>
+      <div class="lejant" style="margin-top:14px">
+        <span><i class="kutu" style="background:#c8c8c8"></i>Orijinal</span>
+        <span><i class="kutu" style="background:#03A9F4"></i>Boyalı</span>
+        <span><i class="kutu" style="background:#f3de1f"></i>Lokal</span>
+        <span><i class="kutu" style="background:#ff1100"></i>Değişen</span>
+      </div>
+      <p class="note">Parçaya tıkla → durumu değiştir (Orijinal→Boyalı→Lokal→Değişen). Düzeltmelerin öğrenme için saklanır.</p>
+    </div>
+    <div class="kart">
+      <div id="svgKap">SVG yükleniyor…</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ekspertizOku, svgBoya, PARCALAR, DURUMLAR, RENK, DURUM_ETIKET, duzeltmeKaydet } from './js/ekspertiz.js'
+
+    let paneller = Object.fromEntries(PARCALAR.map(p => [p, 'ORIJINAL']))
+    let firma = 'BILINMEYEN'
+    let svgEl = null
+
+    // SVG'yi getir + göm
+    const svgTxt = await (await fetch('img/ekspertiz-sema.svg')).text()
+    document.getElementById('svgKap').innerHTML = svgTxt
+    svgEl = document.querySelector('#svgKap svg')
+    boyaVeBagla()
+
+    function boyaVeBagla() {
+      svgBoya(svgEl, paneller)
+      for (const path of svgEl.querySelectorAll('[data-part]')) {
+        path.onclick = () => {
+          const p = path.getAttribute('data-part')
+          const i = DURUMLAR.indexOf(paneller[p] === 'LOKAL BOYA' ? 'LOKAL BOYA' : paneller[p])
+          const eski = paneller[p]
+          paneller[p] = DURUMLAR[(i + 1) % DURUMLAR.length]
+          if (firma !== 'BILINMEYEN') duzeltmeKaydet(firma, p, eski, paneller[p])
+          svgBoya(svgEl, paneller); ozetCiz()
+        }
+      }
+    }
+
+    document.getElementById('dosya').addEventListener('change', async e => {
+      const f = e.target.files[0]; if (!f) return
+      document.getElementById('ozet').innerHTML = 'Okunuyor…'
+      const r = await ekspertizOku(f)
+      firma = r.firma
+      if (r.hata) { document.getElementById('ozet').innerHTML = '<b style="color:#b00">Hata:</b> ' + r.hata; return }
+      // panelleri uygula (yoksa orijinal)
+      paneller = Object.fromEntries(PARCALAR.map(p => [p, r.paneller[p] || 'ORIJINAL']))
+      boyaVeBagla(); ozetCiz(r)
+    })
+
+    function ozetCiz(r) {
+      const boyali = PARCALAR.filter(p => paneller[p] !== 'ORIJINAL')
+      let h = `<table>
+        <tr><td>Firma</td><td><b>${firma}</b></td></tr>
+        <tr><td>KM</td><td><b>${r && r.km != null ? r.km.toLocaleString('tr-TR') : '—'}</b></td></tr>
+        <tr><td>Güven</td><td>${r ? (r.manuel ? 'MANUEL (firma otomatik değil)' : r.guven) : '—'}</td></tr>
+        <tr><td>Boyalı/Değişen parça</td><td>${boyali.length}</td></tr>
+      </table>`
+      if (r && r.sor && r.sor.length) h += `<div class="rozet sor" style="margin-top:8px">⚠ Sorulacak (Hasarlı): ${r.sor.join(', ')}</div>`
+      if (boyali.length) h += '<div style="margin-top:10px;font-size:13px">' + boyali.map(p => `${p}: <b>${DURUM_ETIKET[paneller[p]]}</b>`).join('<br>') + '</div>'
+      document.getElementById('ozet').innerHTML = h
+    }
+    ozetCiz()
+  </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Araç Detayı — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch" id="icerik">
+    <div class="p-lg md:p-xl max-w-[1440px] mx-auto w-full space-y-lg pb-24">
+
+      <div class="flex items-center gap-3">
+        <a href="stok.html" class="text-on-surface-variant hover:text-primary shrink-0 flex items-center gap-1 text-label-md font-bold" title="Stok"><span class="material-symbols-outlined">arrow_back</span> Envanter</a>
+      </div>
+
+      <!-- HERO: büyük foto + başlık + fiyat + CRM özet -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+        <section id="aracHero" class="lg:col-span-2 rounded-2xl border border-outline-variant custom-shadow overflow-hidden bg-on-surface"></section>
+        <aside id="crmOzet" class="rounded-2xl border border-outline-variant custom-shadow bg-surface-container-lowest p-lg"></aside>
+      </div>
+
+      <!-- Teknik + Uygun müşteriler -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined">tune</span> Teknik Detaylar</h3>
+          <div id="aracTeknik"></div>
+        </section>
+        <section id="uygunMusteriKart" class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined">group</span> Bu Aracı İsteyen Müşteriler</h3>
+            <span id="uygunMusteriSayi" class="text-label-sm text-on-surface-variant"></span>
+          </div>
+          <div id="uygunMusteri"></div>
+        </section>
+      </div>
+
+      <!-- Kredi -->
+      <div id="krediBilgi"></div>
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg" id="krediBasvuruKart">
+        <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined">credit_score</span> Kredi Başvurusu</h3>
+        <div id="krediBasvuru"></div>
+      </section>
+
+      <!-- Timeline + Notlar/Ekip -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined">timeline</span> Araç Yaşam Döngüsü</h3>
+          <div id="timeline"></div>
+        </section>
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg" id="notlarKart">
+          <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined">forum</span> Dahili Notlar / Ekip</h3>
+          <form id="yeniNotForm" class="mb-4">
+            <div class="alan tam"><label>Yeni Not</label><textarea id="yeniNotMetin" required placeholder="Bu araç hakkında not (durum, müşteri ilgisi, fiyat pazarlığı…)"></textarea></div>
+            <div class="aralik"><button type="submit" class="btn btn-gold">Not Ekle</button></div>
+          </form>
+          <div id="notlar" class="space-y-4"></div>
+        </section>
+      </div>
+
+    </div>
+
+    <!-- Sticky aksiyon çubuğu -->
+    <div id="stickyBar" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-on-surface text-white rounded-full px-4 py-2.5 flex items-center gap-2 shadow-2xl"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { stokAracKur } from './js/stok-arac.js'
+    const d = await requireAuth({ sayfa: 'stok' })
+    if (d) { ustBarKur(d); await stokAracKur(d) }
+  </script>
+</body>
+</html>

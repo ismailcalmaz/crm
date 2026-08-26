@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Satış — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary">Satın Alma</h2>
+          <p class="text-body-md text-on-surface-variant">Web "aracını sat" başvuruları ve stokta olmayan müşteri araç talepleri (tedarik).</p>
+        </div>
+        <button id="yenile" class="bg-surface-container-low border border-outline-variant text-on-surface px-4 py-2 rounded-lg text-label-md font-bold flex items-center gap-2 hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span> Yenile</button>
+      </div>
+
+      <!-- Sekmeler -->
+      <div class="flex items-center gap-sm border-b border-outline-variant">
+        <button id="tabSatis" data-tab="satis" class="px-4 py-2 text-label-md font-bold border-b-2 border-primary text-primary -mb-px">Aracını Sat Başvuruları</button>
+        <button id="tabTedarik" data-tab="tedarik" class="px-4 py-2 text-label-md font-bold border-b-2 border-transparent text-on-surface-variant hover:text-primary">Araç Talepleri (Tedarik) <span id="tedarikSayi" class="ml-1 bg-primary text-white text-xs font-bold px-1.5 rounded-full"></span></button>
+      </div>
+
+      <!-- Sekme 1: Web satış -->
+      <div id="bolumSatis" class="space-y-lg">
+        <div id="satisHero" class="grid grid-cols-2 lg:grid-cols-4 gap-gutter"></div>
+        <div id="filtreler" class="flex flex-wrap items-center gap-sm"></div>
+        <div id="liste"></div>
+      </div>
+
+      <!-- Sekme 2: Tedarik — Karar Motoru -->
+      <div id="bolumTedarik" class="gizli space-y-lg">
+        <div id="tedarikKarar"></div>
+        <div>
+          <h3 class="text-title-lg text-primary flex items-center gap-2 mb-1"><span class="material-symbols-outlined">format_list_bulleted</span> Tek Tek Talepler</h3>
+          <p class="text-body-md text-on-surface-variant mb-3">Kriterlerine uyan stok aracı <strong>bulunmayan</strong> açık talepler. Tedarik edildikçe durumu güncelleyin.</p>
+          <div id="tedarikFiltre" class="flex flex-wrap items-center gap-sm mb-3"></div>
+          <div id="tedarikListe"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { webSatisKur } from './js/web-satis.js'
+    const d = await requireAuth({ sayfa: 'web_satis' })
+    if (d) { ustBarKur(d); await webSatisKur(d) }
+  </script>
+</body>
+</html>

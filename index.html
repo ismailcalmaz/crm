@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yönlendiriliyor… — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="yukleniyor">
+    <div>
+      <div class="spinner"></div>
+      <div id="mesaj">Giriş kontrol ediliyor…</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getSession } from './js/auth.js'
+    import { getDanisman } from './js/supabase-client.js'
+    import { ilkSayfaHref } from './js/yetki.js'
+
+    const mesaj = document.getElementById('mesaj')
+
+    ;(async () => {
+      // OAuth dönüşünde Supabase URL hash'ini işleyene kadar kısa bir an gerekebilir
+      const session = await getSession()
+      if (!session) {
+        location.replace('login.html')
+        return
+      }
+
+      mesaj.textContent = 'Rolünüz belirleniyor…'
+      const d = await getDanisman()
+      if (!d) {
+        location.replace('login.html?durum=kayitsiz')
+        return
+      }
+      if (d.aktif === false) {
+        location.replace('login.html?durum=pasif')
+        return
+      }
+
+      location.replace(ilkSayfaHref(d))
+    })()
+  </script>
+</body>
+</html>

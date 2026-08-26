@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sigorta Müşterileri — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div class="p-lg md:p-xl max-w-[1536px] mx-auto w-full space-y-lg">
+
+      <div>
+        <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">contacts</span> Sigorta Müşterileri</h2>
+        <p id="mtOzet" class="text-body-md text-on-surface-variant">Müşteri dosyası — poliçe geçmişi, araçlar, tahsilat.</p>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-gutter items-start">
+        <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow overflow-hidden xl:sticky xl:top-24">
+          <div class="p-3 border-b border-outline-variant flex items-center bg-surface-container-low">
+            <span class="material-symbols-outlined text-on-surface-variant text-[20px]">search</span>
+            <input id="mtAra" placeholder="Ad, TC, telefon…" class="bg-transparent outline-none text-body-md ml-2 w-full" />
+          </div>
+          <div id="mtListe" class="max-h-[70vh] overflow-y-auto"></div>
+        </div>
+        <div id="mtDetay" class="min-w-0"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { musteriKur } from './js/sigorta-musteri.js'
+    const d = await requireAuth({ sayfa: 'sigorta_musteri' })
+    if (d) { ustBarKur(d); await musteriKur(d) }
+  </script>
+</body>
+</html>

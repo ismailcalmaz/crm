@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fiyatlama Merkezi — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div id="kok" class="p-lg md:p-xl max-w-[1440px] mx-auto w-full"></div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { fiyatlamaKur } from './js/fiyatlama.js'
+    const d = await requireAuth({ sayfa: 'fiyatlama' })
+    if (d) { ustBarKur(d); await fiyatlamaKur(d) }
+  </script>
+</body>
+</html>

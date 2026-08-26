@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<!--
+  İLAN GÖRSELİ ŞABLONU — sahibinden.com ilan açıklamasına konan bilgi görseli.
+  Kaynak: siteden (Z:\IC-SITE\ismailcalmaz-site\ilan-sablon.html) taşındı.
+  Tasarım aynen korundu; DEĞİŞENLER:
+    • {{ADRES}} / {{TELEFON}} artık ayarlar tablosundan (sabit değildi)
+    • ekspertiz lejant renkleri CRM'in ekspertiz.js RENK haritasıyla eşitlendi
+      (şema da CRM'in 13 parçalı img/ekspertiz-sema.svg'si — cam etiketiyle aynı)
+  Doldurma: js/ilan-gorsel.js · Görsele çeviren: html2canvas (vendor).
+  ⚠️ Genişlik 800px SABİT — html2canvas bu ölçüde tarar.
+-->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width:800px;
+    font-family:'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color:#2b2b2b;
+    background:#ffffff;
+  }
+  .ilan {
+    width:800px;
+    background:#ffffff;
+    border:1px solid #e3e3e3;
+  }
+  /* Üst şerit — firma */
+  .ust {
+    background:linear-gradient(135deg,#451111 0%,#601818 100%);
+    color:#fff;
+    padding:18px 28px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .ust .firma { font-size:22px; font-weight:700; letter-spacing:.5px; }
+  .ust .firma small { display:block; font-size:11px; font-weight:400; letter-spacing:1px; opacity:.85; margin-top:3px; }
+  .ust .rozet {
+    background:rgba(255,255,255,.15);
+    border:1px solid rgba(255,255,255,.3);
+    padding:6px 14px; border-radius:6px;
+    font-size:13px; font-weight:600;
+  }
+  /* Bölüm başlığı */
+  .blok { padding:20px 28px; border-bottom:1px solid #eee; }
+  .blok:last-child { border-bottom:none; }
+  .blok-baslik {
+    display:inline-block;
+    background:#451111; color:#fff;
+    font-size:14px; font-weight:700; letter-spacing:.5px;
+    padding:6px 16px; border-radius:4px;
+    margin-bottom:14px;
+  }
+  /* Peşinat / kredi satırları */
+  .kredi-ozet {
+    background:#faf6ec;
+    border-left:4px solid #b8902f;
+    padding:12px 16px; margin-bottom:14px;
+    font-size:15px; font-weight:600; color:#5a4a1a;
+  }
+  .kredi-satir {
+    display:flex; align-items:center; gap:8px;
+    padding:7px 0; font-size:14px;
+    border-bottom:1px dashed #eee;
+  }
+  .kredi-satir:last-child { border-bottom:none; }
+  .kredi-satir .tutar {
+    background:#451111; color:#fff;
+    font-weight:700; padding:2px 10px; border-radius:4px;
+    font-size:14px; white-space:nowrap;
+  }
+  .kredi-satir .vurgu {
+    background:#b8902f; color:#fff;
+    font-weight:700; padding:2px 10px; border-radius:4px;
+  }
+  .kredi-aciklama { padding:10px 0; font-size:14px; line-height:1.7; }
+  .kredi-aciklama .tutar-mini {
+    background:#451111; color:#fff; font-weight:700;
+    padding:1px 8px; border-radius:3px; font-size:13px;
+  }
+  .kredi-aciklama .vurgu-mini {
+    background:#b8902f; color:#fff; font-weight:700;
+    padding:1px 8px; border-radius:3px; font-size:13px;
+  }
+  /* Model bilgisi tablosu */
+  .model-satir { display:flex; padding:5px 0; font-size:14px; }
+  .model-satir .etiket { font-weight:700; min-width:130px; color:#555; }
+  .model-satir .deger { color:#2b2b2b; }
+  /* Donanım listesi */
+  .donanim {
+    display:grid; grid-template-columns:1fr 1fr;
+    gap:4px 20px; margin-top:6px;
+  }
+  .donanim-item {
+    font-size:13px; padding:3px 0;
+    display:flex; align-items:center; gap:7px;
+  }
+  .donanim-item::before {
+    content:''; width:6px; height:6px; border-radius:50%;
+    background:#b8902f; flex-shrink:0;
+  }
+  /* Ekspertiz / tramer */
+  .durum-iyi { color:#1a7a3e; font-weight:600; font-size:14px; }
+  .durum-dikkat { color:#b8902f; font-weight:600; font-size:14px; }
+  .eks-boyali { color:#1560d0; font-weight:700; }      /* boyalı — mavi */
+  .eks-lokal  { color:#c9a227; font-weight:700; }      /* lokal boya — sarı/altın */
+  .eks-degisen{ color:#c0271e; font-weight:700; }      /* değişen — kırmızı */
+  .ekspertiz-metin, .tramer-metin { font-size:14px; line-height:1.8; }
+  /* Ekspertiz şeması */
+  .eks-sema-alan { text-align:center; margin:4px 0 10px; }
+  .eks-sema-alan svg { width:210px; height:auto; }
+  .eks-lejant { display:flex; justify-content:center; gap:18px; margin-bottom:12px; font-size:12px; color:#555; }
+  .eks-lejant span { display:flex; align-items:center; gap:5px; }
+  .eks-lejant .lej { width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid #ddd; }
+  /* Alt bilgi */
+  .alt {
+    background:#2b2b2b; color:#ddd;
+    padding:14px 28px; font-size:12px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .alt .adres { opacity:.8; }
+  .alt .tel { font-weight:700; color:#fff; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="ilan">
+
+  <!-- ÜST: FİRMA -->
+  <div class="ust">
+    <div class="firma">{{FIRMA_ADI}}<small>2. El Araçta Güvenle Yeni Nesil Deneyim</small></div>
+    <div class="rozet">{{MODEL_YILI}} · {{PLAKA}}</div>
+  </div>
+
+  <!-- PEŞİNAT DETAYI -->
+  <div class="blok">
+    <div class="blok-baslik">PEŞİNAT DETAYI</div>
+    {{K1_BLOK}}
+    <div class="kredi-aciklama">
+      <span class="vurgu-mini">%{{K2_FAIZ}} faiz</span> oranlı {{K2_VADE}} ay vadeli kampanyalı taşıt kredilerimizden de faydalanabilirsiniz.
+    </div>
+    {{KREDI_ACIKLAMALAR}}
+  </div>
+
+  <!-- ARAÇ MODEL BİLGİSİ -->
+  <div class="blok">
+    <div class="blok-baslik">ARAÇ MODEL BİLGİSİ</div>
+    <div class="model-satir"><span class="etiket">MODEL ADI:</span><span class="deger">{{MODEL_ADI}}</span></div>
+    <div class="model-satir"><span class="etiket">MODEL YILI:</span><span class="deger">{{MODEL_YILI}}</span></div>
+    <div class="model-satir"><span class="etiket">CİNSİ:</span><span class="deger">{{CINSI}}</span></div>
+    <div class="model-satir"><span class="etiket">YAKIT / VİTES:</span><span class="deger">{{YAKIT_VITES}}</span></div>
+    <div class="model-satir"><span class="etiket">KM:</span><span class="deger">{{KM}}</span></div>
+  </div>
+
+  <!-- EKSPERTİZ DETAYI -->
+  <div class="blok">
+    <div class="blok-baslik">EKSPERTİZ DETAYI</div>
+    <div class="eks-sema-alan">{{EKSPERTIZ_SEMA}}</div>
+    <div class="eks-lejant">
+      <span><i class="lej" style="background:#c8c8c8"></i>Orijinal</span>
+      <span><i class="lej" style="background:#03A9F4"></i>Boyalı</span>
+      <span><i class="lej" style="background:#f3de1f"></i>Lokal Boya</span>
+      <span><i class="lej" style="background:#ff1100"></i>Değişen</span>
+    </div>
+    <div class="ekspertiz-metin">{{EKSPERTIZ_METIN}}</div>
+  </div>
+
+  <!-- TRAMER BİLGİSİ -->
+  <div class="blok">
+    <div class="blok-baslik">TRAMER BİLGİSİ</div>
+    <div class="tramer-metin">{{TRAMER_METIN}}</div>
+  </div>
+
+  <!-- ARAÇ DONANIM DETAYI -->
+  <div class="blok">
+    <div class="blok-baslik">ARAÇ DONANIM DETAYI</div>
+    <div class="donanim">{{DONANIM_LISTESI}}</div>
+  </div>
+
+  <!-- ALT: İLETİŞİM -->
+  <div class="alt">
+    <span class="adres">📍 {{ADRES}}</span>
+    <span class="tel">📞 {{TELEFON}}</span>
+  </div>
+
+</div>
+</body>
+</html>

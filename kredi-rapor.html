@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kredi Raporu — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch" id="icerik">
+    <div class="p-lg md:p-xl max-w-[1440px] mx-auto w-full space-y-lg">
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-md">
+        <div>
+          <h2 class="text-headline-md text-primary flex items-center gap-2"><span class="material-symbols-outlined">monitoring</span> Kredi Raporu</h2>
+          <p class="text-body-md text-on-surface-variant">
+            Finans kuruluşu bazında başvuru, onay ve kullandırım.
+          </p>
+        </div>
+        <label class="flex items-center gap-2 bg-surface-container-lowest border border-outline-variant rounded-lg px-3 py-1.5 custom-shadow">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">calendar_month</span>
+          <select id="ayFiltre" class="bg-transparent text-label-md font-bold text-on-surface focus:outline-none min-h-[36px] pr-1"></select>
+        </label>
+      </div>
+
+      <div id="ozet"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">filter_alt</span> Dönüşüm Hunisi</h3>
+          <p class="text-label-md text-on-surface-variant mb-4">Dosya başına yol: başvurudan kullandırıma.</p>
+          <div id="huni"></div>
+        </section>
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">grid_on</span> Banka Performans Heatmap</h3>
+          <p class="text-label-md text-on-surface-variant mb-4">Kurum × ay onay oranı (tüm dönemler).</p>
+          <div id="heatmap" class="overflow-x-auto"></div>
+        </section>
+      </div>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">bar_chart</span> Aylara göre karşılaştırma</h3>
+        <p class="text-label-md text-on-surface-variant mb-4">Ay filtresinden bağımsız — tüm dönemleri gösterir.</p>
+        <div class="h-72"><canvas id="grafikAylik"></canvas></div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">account_balance</span> Kuruluş bazında</h3>
+        <div id="kurumTablo"></div>
+      </section>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">donut_large</span> Kullandırım dağılımı</h3>
+          <p class="text-label-md text-on-surface-variant mb-3">Hangi kurumdan ne kadar kredi kullandırıldı.</p>
+          <div class="h-64"><canvas id="grafikKullandirim"></canvas></div>
+        </section>
+        <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+          <h3 class="text-title-lg text-primary mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">pending_actions</span> Kullandırılmayan onaylar</h3>
+          <p class="text-label-md text-on-surface-variant mb-3">Onaylı ama henüz kullandırılmamış — takip edilmeli.</p>
+          <div class="h-64"><canvas id="grafikOnay"></canvas></div>
+        </section>
+      </div>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">badge</span> Kredi personeli</h3>
+        <div id="personelTablo"></div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h3 class="text-title-lg text-primary flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">list_alt</span> Dosya listesi <span id="dosyaSayi" class="text-label-md text-on-surface-variant font-normal"></span></h3>
+          <input id="dosyaArama" placeholder="Müşteri adı ara…"
+            class="bg-surface border border-outline-variant rounded-lg px-4 py-2 text-body-md min-h-[44px] sm:w-72" />
+        </div>
+        <div id="dosyaListe"></div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant custom-shadow p-lg">
+        <h3 class="text-title-lg text-primary mb-4 flex items-center gap-2"><span class="material-symbols-outlined text-[22px]">block</span> Red nedenleri</h3>
+        <div id="redTablo"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    import { krediRaporKur } from './js/kredi-rapor.js'
+    const d = await requireAuth({ sayfa: 'kredi_rapor' })
+    if (d) { ustBarKur(d); await krediRaporKur(d) }
+  </script>
+</body>
+</html>

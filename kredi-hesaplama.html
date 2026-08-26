@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <!-- viewport-fit=cover: alt sabit şeridin env(safe-area-inset-bottom)
+       kullanabilmesi için gerekli (iPhone çentik/ana ekran çubuğu). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Kredi Hesaplama — CRM</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar"></header>
+  <nav class="nav" id="nav"></nav>
+
+  <main class="icerik stitch">
+    <div id="kok" class="pb-28">
+
+      <!-- Sayfa başlığı (sayfaBaslik ile doldurulur) -->
+      <div class="max-w-[1100px] mx-auto px-lg pt-lg pb-md">
+        <div id="baslik"></div>
+      </div>
+
+      <!-- GİRDİ PANELİ — bordo, mobilde üst barın altına yapışır.
+           Danışman listeyi kaydırırken tutar/vade hep elinin altında kalır.
+           top-[56px] = .ust-bar yüksekliği (style.css). -->
+      <div class="sticky top-[56px] z-20 bg-primary text-on-primary shadow-lg">
+        <div class="max-w-[1100px] mx-auto px-lg py-md space-y-4">
+
+          <div>
+            <label for="tutar" class="block text-[11px] font-bold uppercase tracking-[0.14em] text-white/70 mb-1">Finansman tutarı</label>
+            <div class="flex items-baseline gap-2 border-b-2 border-white/25 focus-within:border-white transition-colors pb-1.5">
+              <input id="tutar" class="para-gir flex-1 min-w-0 bg-transparent border-0 outline-none p-0 text-white placeholder-white/40 !text-3xl md:!text-4xl font-black tracking-tight tabular-nums"
+                type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-describedby="tutarIpucu" />
+              <span class="text-lg font-bold text-white/70 shrink-0" aria-hidden="true">₺</span>
+            </div>
+            <p id="tutarIpucu" class="sr-only">Kredi ile finanse edilecek tutarı yazın; teklifler anında güncellenir.</p>
+          </div>
+
+          <div>
+            <span id="vadeBaslik" class="block text-[11px] font-bold uppercase tracking-[0.14em] text-white/70 mb-1.5">Vade (ay)</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <div id="vadeCipler" class="flex flex-wrap gap-2" role="group" aria-labelledby="vadeBaslik"></div>
+              <input id="vadeOzel" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="Diğer"
+                aria-label="Özel vade (ay)"
+                class="w-24 bg-white/10 border border-white/30 rounded-full text-white placeholder-white/50 text-center text-[16px] font-bold px-3 py-2 outline-none focus:border-white transition-colors" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="max-w-[1100px] mx-auto px-lg pt-md space-y-md">
+
+        <!-- Tür filtresi -->
+        <div id="filtreler" class="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Ürün türü filtresi"></div>
+
+        <!-- Özet satırı (canlı bölge — kısa metin, ekran okuyucuyu boğmaz) -->
+        <div id="ozet" class="flex items-baseline justify-between gap-3 text-label-md text-on-surface-variant" aria-live="polite"></div>
+
+        <!-- Teklifler -->
+        <div id="sonuc"></div>
+
+        <!-- Uygun olmayan ürünler -->
+        <div id="uygunsuz"></div>
+
+        <!-- Ek hesaplar (harç · kredi kartı limiti) -->
+        <div id="araclar" class="pt-lg"></div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Alt sabit şerit — mobilde başparmak menzilinde -->
+  <!-- Zemin muamelesi .ust-bar ile aynı (yarı saydam + blur + ince çizgi) —
+       uygulamada zaten kullanılan yapışkan şerit dili. -->
+  <div class="stitch fixed left-0 right-0 bottom-0 z-[80] px-lg pt-3 bg-white/85 backdrop-blur-[10px] border-t border-outline-variant"
+    style="padding-bottom: calc(12px + env(safe-area-inset-bottom))">
+    <button id="kopyaBtn" type="button"
+      class="w-full max-w-[1100px] mx-auto flex items-center justify-center gap-2 bg-primary text-on-primary rounded-xl px-4 py-3.5 text-label-md font-bold shadow-lg hover:bg-primary-container transition-colors">
+      <span class="material-symbols-outlined text-[18px]">content_copy</span>
+      <span id="kopyaMetin">En uygun 5 teklifi kopyala</span>
+    </button>
+  </div>
+
+  <script type="module">
+    import { requireAuth, ustBarKur } from './js/auth.js'
+    const d = await requireAuth({ sayfa: 'kredi_hesaplama' })
+    if (d) {
+      ustBarKur(d)
+      // Modül dinamik yükleniyor: hesap motoru henüz yayında değilse sayfa
+      // BEYAZ kalmasın, kullanıcı sebebini görsün (sessiz hata yok).
+      try {
+        const { krediHesaplamaKur } = await import('./js/kredi-hesaplama.js')
+        await krediHesaplamaKur(d)
+      } catch (e) {
+        console.error('[kredi-hesaplama] sayfa yüklenemedi', e)
+        document.getElementById('sonuc').innerHTML =
+          '<div class="bg-error-container text-on-error-container border border-error/20 rounded-xl p-4">' +
+          '<b>Kredi hesaplama yüklenemedi.</b><br>Sayfayı yenileyin; sorun sürerse bilgi işleme haber verin.</div>'
+      }
+    }
+  </script>
+</body>
+</html>
