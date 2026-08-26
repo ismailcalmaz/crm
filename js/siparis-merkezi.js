@@ -18,7 +18,7 @@
 //     • olaylar'a yazma yalnız olay_ekle() RPC ile.
 // =====================================================================
 import { supabase } from './supabase-client.js'
-import { danismanMap, danismanAdi, fmtPara, fmtTarih, fmtTarihKisa, kacis, trBuyuk, buyuk, telNo, dbHata, TESLIMAT_DURUM_ETIKET, rezervasyonNedenEtiket, disLokasyon, TESLIM_SINIF, TESLIM_SORUMLU_ETIKET, TESLIM_CIPLERI, bugunISO, gunEkleISO } from './veri.js'
+import { danismanMap, danismanAdi, fmtPara, fmtTarih, fmtTarihKisa, kacis, trBuyuk, buyuk, telNo, dbHata, TESLIMAT_DURUM_ETIKET, rezervasyonNedenEtiket, disLokasyon, TESLIM_SINIF, TESLIM_SORUMLU_ETIKET, TESLIM_CIPLERI, bugunISO, gunEkleISO, urlParam } from './veri.js'
 import { mat, basHarf, uyari, binlikInputKur, cipler, toast } from './stitch-ui.js'
 import { satisMuduruMu, mudurMu } from './yetki.js'
 import { teslimPencereAc } from './teslim-pencere.js'
@@ -38,6 +38,11 @@ let NOT_BALON = null          // açık görüşme notu balonu
 let PLAN = new Map()          // siparis_id -> v_teslim_plani satırı (sınıf/sıra SUNUCUDAN)
 let BUGUN_TAMAM = 0           // bugüne planlanıp TESLİM EDİLMİŞ dosya sayısı
 let spmPlan = null            // Stoktan Sipariş modalında seçilen teslim planı
+// Açık "Tarih / gerekçe" penceresindeki SİSTEM TEŞHİSİ (gecikme_nedeni_turet).
+// ⚠️ Bu RPC HİÇBİR ŞEY YAZMAZ, yalnız önerir. Danışmana boş "neden gecikti?"
+//    kutusu sorulmaz: sistem sebebi zaten biliyor, danışman DOĞRULAR.
+//    RPC hata verirse null kalır ve pencere Faz 1'deki gibi çalışır.
+let sptTeshis = null
 const filtre = { arama: '', danisman: '', durum: '', sinif: '' }
 
 const one = v => (Array.isArray(v) ? v[0] : v) || null
@@ -55,6 +60,29 @@ export async function siparisMerkeziKur(d) {
   binlikInputKur()
   DMAP = await danismanMap()
   await yukle()
+  derinBaglanti()
+}
+
+// ---------- Derin bağlantı: bildirimden doğrudan pencereye ----------
+// Bildirimler siparis.html'e "?id=<siparis>&gerekce=1" ile bağlanır.
+// Kullanıcıyı listede satır aratmak yerine O DOSYANIN penceresi açılır.
+// ⚠️ yukle() BİTTİKTEN sonra çağrılır: pencere ciz()'in bastığı #spModalKat
+//    içine yazılıyor, erken çağrılırsa kap henüz yok.
+function derinBaglanti() {
+  const id = urlParam('id')
+  if (!id || urlParam('gerekce') !== '1') return
+  // Parametreyi URL'den düşür: sayfa yenilenince pencere tekrar açılmasın.
+  try {
+    const u = new URL(location.href); u.searchParams.delete('gerekce')
+    history.replaceState(null, '', u.pathname + u.search + u.hash)
+  } catch (e) { console.warn('[teslim] derin bağlantı URL temizlenemedi', e) }
+  const s = SIP.find(x => x.id === id)
+  if (!s) return toast('Bu sipariş listede değil — teslim edilmiş, iptal edilmiş ya da görme yetkiniz dışında olabilir.')
+  if (!s._plan) return toast('Bu dosyada teslim planı kaydı yok.')
+  if (s._plan.plan_muaf) return toast('İhale dosyasında teslim planı tutulmaz.')
+  // Plan satırı var ama tarih yoksa doğru kapı göç penceresi (planBtnHtml ile aynı ayrım).
+  if (!s._plan.planlanan) return gocAc(id)
+  planAc(id)
 }
 
 async function yukle() {
@@ -143,8 +171,26 @@ async function yukle() {
     for (const f of (fotolar || [])) if (!KAPAK.has(f.arac_id)) KAPAK.set(f.arac_id, f.dosya_yolu)
   }
 
+  // ---- Sorumlu çipi: teslim defterinin SON satırı (sql/248) ----
+  // Gerekçe girilmiş dosyada "kim çözecek" birimini satırda göstermek için
+  // siparis_teslim_planlari'nın siparis başına EN BÜYÜK id'li satırı okunur
+  // (id bigint, artan → id DESC ile ilk gelen o dosyanın son hareketidir).
+  // ⚠️ PostgREST varsayılan 1000 satır limiti sessizce keser (CLAUDE.md §5/3).
+  const DEFTER_LIMIT = 2000
+  const sorumluMap = new Map()
+  if (ids.length) {
+    const { data: defter, error: dErr } = await supabase.from('siparis_teslim_planlari')
+      .select('id, siparis_id, beyan_edilen_sorumlu')
+      .in('siparis_id', ids).order('id', { ascending: false }).limit(DEFTER_LIMIT)
+    if (dErr) dbHata('teslim planı defteri', dErr)
+    if ((defter || []).length >= DEFTER_LIMIT) console.warn('[teslim] siparis_teslim_planlari ' + defter.length + ' satır döndü — limite dayandı, sayfalama gerekli')
+    for (const d of (defter || [])) if (!sorumluMap.has(d.siparis_id)) sorumluMap.set(d.siparis_id, d.beyan_edilen_sorumlu || null)
+  }
+
   for (const s of SIP) {
     s._bakiye = bakMap.has(s.id) ? bakMap.get(s.id) : null
+    // Son defter satırında beyan yoksa (ör. ilk plan / öne alma) çip basılmaz.
+    s._sorumlu = sorumluMap.get(s.id) || null
     s._sonHareket = sonMap.get(s.id) || s.created_at
     s._plan = PLAN.get(s.id) || null
     s._sinif = s._plan?.sinif || null
@@ -468,6 +514,14 @@ function ertelemeRozet(s) {
   return `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-bold whitespace-nowrap">${n}. erteleme</span>`
 }
 
+// Sorumlu birim çipi — gerekçe girilmiş dosyalarda "kim çözecek" (sql/248).
+// ⚠️ Kırmızı "suç" değil "kim çözecek" demek. Etiketler veri.js
+//    TESLIM_SORUMLU_ETIKET'ten gelir, burada yeniden yazılmaz.
+function sorumluCip(s) {
+  const et = TESLIM_SORUMLU_ETIKET[s._sorumlu]; if (!et) return ''
+  return `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-primary-fixed text-primary text-[10px] font-bold whitespace-nowrap max-w-full min-w-0"><span class="truncate min-w-0">${kacis(et)}</span></span>`
+}
+
 const planTarihi = p => (p?.planlanan ? fmtTarihKisa(p.planlanan) : '—')
 
 // Teslim planı düğmesi — İKİ AYRI UÇ, tek düğmeye bağlanamazlar:
@@ -492,7 +546,7 @@ function teslimHucre(s) {
   if (!s._plan) return `<span class="text-label-sm text-on-surface-variant">—</span>`
   return `<div class="flex flex-col gap-1 items-start min-w-0 max-w-full">
     <span class="text-label-md font-semibold text-on-surface tabular-nums">${kacis(planTarihi(s._plan))}</span>
-    ${teslimRozet(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
+    ${teslimRozet(s)}${sorumluCip(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
   </div>`
 }
 
@@ -502,7 +556,7 @@ function teslimSeritHtml(s) {
   return `<div class="xl:hidden mt-1 flex flex-wrap items-center gap-1 min-w-0">
     ${mat('event', 'text-[13px] text-on-surface-variant')}
     <span class="text-label-sm text-on-surface-variant tabular-nums">${kacis(planTarihi(s._plan))}</span>
-    ${teslimRozet(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
+    ${teslimRozet(s)}${sorumluCip(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
   </div>`
 }
 
@@ -610,6 +664,11 @@ async function gocKaydet(s) {
 //    pencere yalnız girdi toplar ve dönen `tur`u Türkçeye çevirir.
 // ⚠️ Tarih BOŞ bırakılabilir: "tarih değişmiyor, yalnız gerekçe veriyorum"
 //    demektir (sunucu tur=GEREKCE üretir ve gerekçeyi zorunlu tutar).
+// FAZ 2 — Danışmana BOŞ "neden gecikti?" kutusu SORULMAZ: pencere açılırken
+//    gecikme_nedeni_turet() çağrılır, sistemin teşhisi en üstte şerit olarak
+//    gösterilir, danışman tek tıkla DOĞRULAR (p_kaynak='OTOMATIK'). Yazı
+//    yazmak yalnız sebep sistem dışıysa gerekir ("Başka sebep seç" →
+//    p_kaynak='DANISMAN'). Şerit basılamazsa pencere Faz 1'deki gibi çalışır.
 function planAc(id) {
   const s = SIP.find(x => x.id === id); if (!s) return
   const p = s._plan; if (!p) return
@@ -640,14 +699,20 @@ function planAc(id) {
             <span class="text-[11px] text-on-surface-variant">${p.plan_tipi === 'TAHMIN' ? 'Tahmin (gecikme sayacı işlemez)' : 'Müşteriye söz verildi'}</span>
           </div>
         </div>
-        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Yeni Teslim Tarihi</label>
-          <input id="sptTarih" type="date" min="${kacis(bugunISO())}" class="${INP} mt-1" />
-          <p class="text-[11px] text-on-surface-variant mt-1">Boş bırakırsanız tarih değişmez, yalnız gerekçe kaydedilir. Geçmiş bir gün seçilemez (BR-0141).</p></div>
-        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Gerekçe</label>
-          <select id="sptNeden" class="${INP} mt-1"><option value="">Seçiniz…</option>${nedenOpts}</select>
-          <p class="text-[11px] text-on-surface-variant mt-1">Tarih ileri alınıyorsa ya da hiç değişmiyorsa gerekçe zorunludur. Öne alırken istenmez.</p></div>
-        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Açıklama</label>
-          <textarea id="sptNot" rows="2" placeholder="Ne oldu, ne zaman çözülür?" class="${INP} mt-1 resize-none"></textarea></div>
+        <div id="sptTeshis" data-sip="${kacis(s.id)}"></div>
+        <div id="sptElle" class="space-y-3">
+          <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Yeni Teslim Tarihi</label>
+            <input id="sptTarih" type="date" min="${kacis(bugunISO())}" class="${INP} mt-1" />
+            <p class="text-[11px] text-on-surface-variant mt-1">Boş bırakırsanız tarih değişmez, yalnız gerekçe kaydedilir. Geçmiş bir gün seçilemez (BR-0141).</p></div>
+          <div><div class="flex items-center gap-2 flex-wrap">
+              <label class="text-[11px] font-bold text-on-surface-variant uppercase">Gerekçe</label>
+              <span id="sptOneriRozet" class="hidden inline-flex items-center px-1.5 py-0.5 rounded-full bg-primary-fixed text-primary text-[10px] font-bold whitespace-nowrap">sistem önerisi</span></div>
+            <select id="sptNeden" class="${INP} mt-1"><option value="">Seçiniz…</option>${nedenOpts}</select>
+            <p class="text-[11px] text-on-surface-variant mt-1">Tarih ileri alınıyorsa ya da hiç değişmiyorsa gerekçe zorunludur. Öne alırken istenmez.</p>
+            <div id="sptCeliski" class="hidden mt-2 rounded-lg border border-amber-300 bg-[#FFFBEB] px-3 py-2 text-[11px] font-semibold text-amber-900"></div></div>
+          <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Açıklama</label>
+            <textarea id="sptNot" rows="2" placeholder="Ne oldu, ne zaman çözülür?" class="${INP} mt-1 resize-none"></textarea></div>
+        </div>
       </div>
       <div class="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
         <button class="sp-kapat px-5 py-2.5 rounded-lg text-sm font-bold text-on-surface-variant hover:bg-white">Vazgeç</button>
@@ -656,6 +721,104 @@ function planAc(id) {
   kat.querySelector('.sp-bg').addEventListener('click', modalKapat)
   kat.querySelectorAll('.sp-kapat').forEach(b => b.addEventListener('click', modalKapat))
   document.getElementById('sptKaydet').addEventListener('click', () => planKaydet(s))
+  // Gerekçe değişince: "sistem önerisi" rozeti ve çelişki uyarısı tazelenir.
+  document.getElementById('sptNeden').addEventListener('change', celiskiTazele)
+  // Teşhis ASENKRON gelir — pencere anında açılır, şerit hazır olunca yerleşir.
+  teshisYukle(s)
+}
+
+// ---------- Sistem teşhisi (FAZ 2) ----------
+// gecikme_nedeni_turet() HİÇBİR ŞEY YAZMAZ, yalnız önerir. Hata / boş yanıt
+// halinde şerit basılmaz ve pencere Faz 1'deki hâliyle çalışmaya devam eder —
+// yeni özellik eski akışı BOZMAZ.
+async function teshisYukle(s) {
+  sptTeshis = null
+  const { data, error } = await supabase.rpc('gecikme_nedeni_turet', { p_siparis: s.id })
+  if (error) { dbHata('gecikme nedeni türet', error); return }
+  if (!data || data.bulunamadi || !data.neden_kod) { console.warn('[teslim] sistem teşhisi boş döndü', data); return }
+  // Yanıt gelene kadar pencere kapanmış ya da BAŞKA dosya açılmış olabilir:
+  // şeridi yanlış dosyaya yapıştırmamak için kabın data-sip'i doğrulanır.
+  const kap = document.getElementById('sptTeshis')
+  if (!kap || kap.dataset.sip !== s.id) return
+  sptTeshis = data
+
+  const n = GECIKME_NEDENLERI.find(x => x.kod === data.neden_kod)
+  const sorumlu = TESLIM_SORUMLU_ETIKET[data.sorumlu] || ''
+  const bilinen = !!n     // gerekçe listesinde karşılığı yoksa tek tık kaydedilemez
+  kap.innerHTML = `<div class="rounded-xl border border-primary/40 bg-primary-fixed/60 px-3 py-2.5">
+      <div class="flex items-start gap-2">
+        <span class="shrink-0 text-primary">${mat('troubleshoot')}</span>
+        <div class="min-w-0 flex-1">
+          <p class="text-[10px] font-black text-primary uppercase tracking-wider">Sistem teşhisi</p>
+          <p class="text-body-md font-bold text-on-surface leading-snug">${kacis(data.aciklama || n?.ad || '—')}</p>
+          <p class="text-[11px] text-on-surface-variant mt-0.5">${kacis(n?.ad || data.neden_kod)}${sorumlu ? ' — ' + kacis(sorumlu) : ''}</p>
+        </div>
+      </div>
+      <div class="mt-2.5 flex flex-wrap gap-2">
+        ${bilinen ? `<button id="sptOnayla" type="button" class="px-4 py-2 rounded-lg bg-primary text-on-primary text-[13px] font-bold hover:opacity-90">Doğru, kaydet</button>` : ''}
+        <button id="sptBaska" type="button" class="px-4 py-2 rounded-lg bg-surface-container-high text-on-surface text-[13px] font-bold hover:opacity-90">Başka sebep seç</button>
+      </div>
+      ${bilinen ? '' : `<p class="mt-2 text-[11px] font-semibold text-amber-900">Bu teşhisin gerekçe listesinde karşılığı yok — aşağıdan elle seçin.</p>`}
+    </div>`
+
+  // Önerilen kod gerekçe seçicide BAŞTAN SEÇİLİ gelir + "sistem önerisi" rozeti.
+  const sec = document.getElementById('sptNeden')
+  if (sec && bilinen) { sec.value = data.neden_kod; celiskiTazele() }
+  // Teşhis varken elle giriş bloğu kapalı durur: danışmandan yazı istemiyoruz.
+  if (bilinen) elleGoster(false)
+  document.getElementById('sptOnayla')?.addEventListener('click', () => teshisOnayla(s))
+  document.getElementById('sptBaska')?.addEventListener('click', () => elleGoster(true))
+}
+
+// Elle giriş bloğu (tarih / gerekçe / açıklama) ve alt "Kaydet" düğmesi
+// birlikte açılır kapanır — biri görünüp öteki gizli kalırsa pencere
+// "kaydedilemiyor" görünür.
+function elleGoster(ac) {
+  document.getElementById('sptElle')?.classList.toggle('hidden', !ac)
+  document.getElementById('sptKaydet')?.classList.toggle('hidden', !ac)
+}
+
+// Çelişki rozeti: danışman sistemin teşhisinden FARKLI bir sorumluya işaret
+// eden gerekçe seçerse görünürlük sağlanır. ⚠️ ENGELLEME YOK — kayıt yine geçer.
+function celiskiTazele() {
+  const kutu = document.getElementById('sptCeliski'), rozet = document.getElementById('sptOneriRozet')
+  const sec = document.getElementById('sptNeden'); if (!kutu || !sec) return
+  const secili = sec.value || ''
+  rozet?.classList.toggle('hidden', !(sptTeshis && secili && secili === sptTeshis.neden_kod))
+  if (!sptTeshis || !secili || secili === sptTeshis.neden_kod) { kutu.classList.add('hidden'); kutu.textContent = ''; return }
+  const secN = GECIKME_NEDENLERI.find(x => x.kod === secili)
+  if ((secN?.ozellikler?.sorumlu || '') === (sptTeshis.sorumlu || '')) { kutu.classList.add('hidden'); kutu.textContent = ''; return }
+  const oneriN = GECIKME_NEDENLERI.find(x => x.kod === sptTeshis.neden_kod)
+  const sor = TESLIM_SORUMLU_ETIKET[sptTeshis.sorumlu] || ''
+  kutu.innerHTML = `Sistem teşhisi: ${kacis(oneriN?.ad || sptTeshis.neden_kod)}${sor ? ' (' + kacis(sor) + ')' : ''}. Yine de kaydedilecek.`
+  kutu.classList.remove('hidden')
+}
+
+// "Doğru, kaydet" — sistemin teşhisi AYNEN onaylanır (p_kaynak='OTOMATIK').
+// Tarih değişmediği için p_yeni_tarih null gider; sunucu tur=GEREKCE üretir.
+async function teshisOnayla(s) {
+  const t = sptTeshis; if (!t) return
+  const hata = msg => { const h = document.getElementById('sptHata'); if (h) { h.textContent = msg; h.classList.remove('hidden') } }
+  document.getElementById('sptHata')?.classList.add('hidden')
+  // Açıklaması zorunlu bir gerekçe tek tıkla kaydedilemez — sunucu reddeder.
+  // Kullanıcıyı hataya çarptırmak yerine elle bloğu açıp yazdırıyoruz.
+  const n = GECIKME_NEDENLERI.find(x => x.kod === t.neden_kod)
+  if (n && String(n.ozellikler?.not_zorunlu) === 'true') {
+    elleGoster(true)
+    return hata('Bu gerekçe için açıklama zorunlu — aşağıya yazıp Kaydet deyin.')
+  }
+  const btn = document.getElementById('sptOnayla'); if (btn) { btn.disabled = true; btn.textContent = 'Kaydediliyor…' }
+  const geri = () => { if (btn) { btn.disabled = false; btn.textContent = 'Doğru, kaydet' } }
+  const { data, error } = await supabase.rpc('teslim_plani_degistir', {
+    p_siparis: s.id, p_yeni_tarih: null, p_neden_kod: t.neden_kod, p_not: null,
+    p_plan_tipi: null, p_kaynak: 'OTOMATIK',
+  })
+  if (error) { dbHata('teslim planı değiştir (otomatik)', error); geri(); elleGoster(true); return hata(planHataMetni(error)) }
+  if (!data?.ok) { console.error('teslim_plani_degistir beklenmeyen yanıt', data); geri(); return hata('Kaydedilemedi — sunucu onay vermedi.') }
+  modalKapat()
+  // ⚠️ Sonuç mesajı toast() ile — #icerik yeniden çizilince içine yazılan silinir.
+  toast(planSonucMetni(data))
+  await yukle()
 }
 
 async function planKaydet(s) {
@@ -903,7 +1066,9 @@ function aksiyonBtn(s) {
 function modalKabuk() {
   return `<div id="spModalKat" class="fixed inset-0 z-[100] hidden"></div>`
 }
-function modalKapat() { const k = document.getElementById('spModalKat'); if (k) { k.classList.add('hidden'); k.innerHTML = '' } }
+// ⚠️ Sistem teşhisi pencereyle birlikte ölür: kalırsa bir sonraki dosyanın
+//    çelişki uyarısı ÖNCEKİ dosyanın teşhisine göre hesaplanır.
+function modalKapat() { sptTeshis = null; const k = document.getElementById('spModalKat'); if (k) { k.classList.add('hidden'); k.innerHTML = '' } }
 
 // ---------- Stoktan Sipariş Oluştur ----------
 async function stoktanAc() {

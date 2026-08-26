@@ -4,7 +4,7 @@
 //   döner. Böylece güncellemeler anında gelir + çevrimdışı açılır.
 //   Supabase/CDN gibi çapraz-köken istekler ES engellenmez (varsayılan ağ).
 // =====================================================================
-const CACHE = 'ic-crm-v371'
+const CACHE = 'ic-crm-v372'
 
 self.addEventListener('install', e => { self.skipWaiting() })
 

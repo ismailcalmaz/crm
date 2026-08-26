@@ -43,7 +43,7 @@ import { supabase } from './supabase-client.js'
 import {
   danismanMap, danismanAdi, fmtPara, fmtTarih, fmtTarihKisa, kacis, trBuyuk, buyuk,
   dbHata, bugunISO, urlParam, csvIndir, telNo, kaskoKodu, TESLIMAT_DURUM_ETIKET,
-  ARAC_DURUM_ETIKET,
+  ARAC_DURUM_ETIKET, TESLIM_SINIF, TESLIM_SORUMLU_ETIKET,
 } from './veri.js'
 import { mat, basHarf, bosDurum, uyari, binlikInputKur } from './stitch-ui.js'
 import { satisMuduruMu } from './yetki.js'
@@ -84,7 +84,20 @@ let ONAYLAR = new Map()       // cari_hareket_id → {onay_durumu, karar_notu} (
 // F3 — "Teslimata Gönder" 7 şartı. Kapıyı SUNUCU söyler (sql/88
 // teslimata_gonderilebilir); istemci yalnız gösterir. Böylece arayüz atlanarak
 // (konsol/başka sekme) gönderim yapılamaz.
-let TESLIMAT_SART = null      // { uygun, eksikler[], sartlar[{ad, tamam}] }
+// ⚠️ Şartlar KOD ile eşleştirilir (sql/247), Türkçe etiketle DEĞİL.
+//   Etiket metni bir gün düzeltilirse `find` undefined döner, kart çizilmez ve
+//   HATA ÇIKMAZ — üç eşleştirme bu yüzden koda çevrildi.
+let TESLIMAT_SART = null      // { uygun, eksikler[], sartlar[{kod, ad, tamam}] }
+// FAZ 2 — Teslim planı (sql/247-249). Üçü de SALT OKUNUR: sınıf/sıra
+// v_teslim_plani'de, teşhis gecikme_nedeni_turet'te SUNUCUDA hesaplanır.
+// ⚠️ Sınıflandırmayı burada TEKRARLAMA (veri.js TESLIM_SINIF yalnız görsel
+//   karşılıktır). Tarih DEĞİŞTİRME de burada YAPILMAZ: tek kapı
+//   teslim_plani_degistir() RPC'si ve o pencere Sipariş Merkezi'nde yaşıyor —
+//   düğme oraya YÖNLENDİRİR, pencereyi ikinci kez yazmaz (CLAUDE.md §4).
+let TESLIM_PLAN = null        // v_teslim_plani satırı (planlanan, sinif, gecikme_gun, plan_tipi, erteleme_sayisi, plan_muaf…)
+let TESLIM_TESHIS = null      // gecikme_nedeni_turet RPC: {neden_kod, sorumlu, aciklama, kaynak:'OTOMATIK', …} — HİÇBİR ŞEY YAZMAZ, önerir
+let TESLIM_DEFTER = []        // siparis_teslim_planlari satırları (en yeni üstte) — salt okunur defter
+let GECIKME_NEDEN = {}        // tanimlar TESLIM_GECIKME_NEDENI: kod → {ad, sorumlu} (defterdeki neden_kod'u insan diline çevirmek için)
 let KAPORA_IADE = null        // BR-0501 kapora_iadeleri satırı (yoksa null → karar bekliyor)
 let RESMI = null              // R7-2: v_siparis_resmi_tahsilat.resmi_tahsilat (EFT+net kredi+POS+takas noter beyanı−EFT iade)
 let TCKN = null                // musteri_kimlik.tckn_vergi_no — yalnız WhatsApp taslağında TC son4 için, gösterime basılmaz
@@ -314,13 +327,17 @@ async function yukle() {
   const { data: tnm, error: tnErr } = await supabase.from('tanimlar')
     // SATIS_SEKLI: Noter kartındaki "Satış Tipi" seçimi (sipariş açılırken
     // sorulur ama eski/eksik dosyalar buradan düzeltilebilsin).
-    .select('tip, kod, ad, ozellikler').in('tip', ['YAKIT', 'VITES', 'RENK', 'EKSPERTIZ_FIRMASI', 'SATIS_SEKLI']).eq('aktif', true)
+    .select('tip, kod, ad, ozellikler').in('tip', ['YAKIT', 'VITES', 'RENK', 'EKSPERTIZ_FIRMASI', 'SATIS_SEKLI', 'TESLIM_GECIKME_NEDENI']).eq('aktif', true)
   if (tnErr) dbHata('yakıt/vites/renk/ekspertiz tanımları', tnErr)
   TANIM = {}
   EKSPERTIZ_FIRMA = {}
+  GECIKME_NEDEN = {}
   for (const t of (tnm || [])) {
     (TANIM[t.tip] ||= {})[t.kod] = t.ad
     if (t.tip === 'EKSPERTIZ_FIRMASI') EKSPERTIZ_FIRMA[t.kod] = { ad: t.ad, ...(t.ozellikler || {}) }
+    // Gecikme nedeninin SORUMLUSU tanımın özelliğinde duruyor (sql/244) —
+    // defterdeki `beyan_edilen_sorumlu` boşsa buradan tamamlanır.
+    if (t.tip === 'TESLIM_GECIKME_NEDENI') GECIKME_NEDEN[t.kod] = { ad: t.ad, sorumlu: t.ozellikler?.sorumlu || null }
   }
 
   // Kredi transferi kartı: bu aracın kredi modülünde kaydı var mı?
@@ -378,6 +395,31 @@ async function yukle() {
   }
   const { data: sart, error: tErr } = await supabase.rpc('teslimata_gonderilebilir', { p_siparis: SIP_ID })
   if (tErr) { dbHata('teslimat şartları', tErr); TESLIMAT_SART = null } else TESLIMAT_SART = sart || null
+
+  // FAZ 2 — Teslim planı / teşhis / defter (sql/247-249). Üçü de OKUMA.
+  // ⚠️ gecikme_nedeni_turet HİÇBİR ŞEY YAZMAZ, yalnız "sistem ne düşünüyor"u
+  //   döndürür. Danışmana boş "neden gecikti?" kutusu sorulmaz; teşhis
+  //   gösterilir, o DOĞRULAR (doğrulama Sipariş Merkezi'ndeki pencerede).
+  {
+    const [{ data: plan, error: plErr }, { data: teshis, error: thErr }, { data: defter, error: dfErr }] = await Promise.all([
+      supabase.from('v_teslim_plani')
+        .select('siparis_id, planlanan, ilk_planlanan, plan_tipi, erteleme_sayisi, son_cevap_ptt, plan_muaf, sorumlu_danisman, cevap_var, gecikme_gun, kirmizi_gunu, sinif, sira_anahtari')
+        .eq('siparis_id', SIP_ID).maybeSingle(),
+      supabase.rpc('gecikme_nedeni_turet', { p_siparis: SIP_ID }),
+      // Defter salt okunur (BR-0142) — buradan yalnız okunur, asla yazılmaz.
+      supabase.from('siparis_teslim_planlari')
+        .select('tur, eski_tarih, yeni_tarih, neden_kod, neden_kaynak, neden_not, beyan_edilen_sorumlu, gecikme_gun, kaydeden, created_at')
+        .eq('siparis_id', SIP_ID).order('created_at', { ascending: false }).limit(50),
+    ])
+    if (plErr) dbHata('teslim planı (v_teslim_plani)', plErr)
+    TESLIM_PLAN = plan || null
+    if (thErr) dbHata('gecikme nedeni türet', thErr)
+    // one(): RPC jsonb döndürürse nesne, `returns table` döndürürse dizi gelir —
+    // bu dosyada iki desen de var (siparis_kredi_ozeti nesne, musteri_onayli_kredi dizi).
+    TESLIM_TESHIS = one(teshis)
+    if (dfErr) dbHata('teslim planı defteri', dfErr)
+    TESLIM_DEFTER = defter || []
+  }
   // BR-0501 — kapora iadesi kararı (yalnız iptal edilmiş + kaporalı dosyalarda anlamlı)
   const { data: ki, error: kiErr } = await supabase.from('kapora_iadeleri')
     .select('id, tutar, karar, karar_gerekce, karar_veren, karar_zamani, finans_durum, finans_notu, finans_zamani')
@@ -1260,6 +1302,7 @@ function cariIslemKartiHtml(kilit) {
 function sagKolonHtml() {
   return `
     ${teslimatKartHtml()}
+    ${teslimPlaniKartHtml()}
     ${krediTransferKartHtml()}
     ${sigortaKartHtml()}
     ${minFiyatOnayKartHtml()}
@@ -1459,6 +1502,123 @@ async function kaporaKararVer(karar) {
   await yukle()
 }
 
+// ---------- TESLİM PLANI KARTI (FAZ 2, sql/247-249) ----------
+// Fikir: danışmana boş "neden gecikti?" kutusu SORULMAZ. Sistem sebebi zaten
+// biliyor; kart teşhisi gösterir, danışman doğrular. Kırmızı "suç" değil
+// "kim çözecek" demektir (veri.js TESLIM_SORUMLU_ETIKET).
+// ⚠️ Sınıflandırma SUNUCUDA (v_teslim_plani.sinif). Burada tarih karşılaştırması
+//   ya da "geç mi" hesabı YAPILMAZ — iki yerde yaşayan kural sessizce eskir.
+
+// Defterdeki tur → tek kelimelik Türkçe karşılık (sql/245 tur CHECK'i ile birebir).
+const TESLIM_TUR_ETIKET = {
+  ILK_PLAN: 'İlk plan', ERTELEME: 'Erteleme', GEREKCE: 'Gerekçe',
+  GOC: 'Plan girildi', DUZELTME: 'Düzeltme', ERKEN: 'Öne alındı', MUAFIYET: 'Muafiyet',
+}
+
+// "22.08" — zaman çizelgesi dar kolonda yaşıyor, dd.mm.yyyy üç kez yan yana
+// gelince satır taşıyordu; yıl dosyanın kendisinden zaten belli.
+// ⚠️ new Date() ile ÇEVİRME: kolon `date` tipinde ('2026-08-22'), Date bunu
+//   UTC gece yarısı sayar ve negatif saat diliminde bir gün geriye kayar.
+//   Metni doğrudan ayrıştırmak bu riski tamamen kaldırır.
+const planGunAy = d => {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? m[3] + '.' + m[2] : '—'
+}
+
+// Defterin tek satırı: "22.08 → 29.08 · Kredi parası gelmedi (Kredi) · Barış D. · 2 gün gecikme"
+function teslimDefterSatiri(r) {
+  const nd = GECIKME_NEDEN[r.neden_kod] || null
+  const nedenAd = nd?.ad || r.neden_kod || null
+  const sorumlu = TESLIM_SORUMLU_ETIKET[r.beyan_edilen_sorumlu || nd?.sorumlu] || null
+  const kim = r.kaydeden ? danismanAdi(DMAP, r.kaydeden) : null
+  const gec = Number(r.gecikme_gun) || 0
+  // İlk plan bir "değişiklik" değil, başlangıç — ok işareti yanıltıcı olurdu.
+  const bas = r.tur === 'ILK_PLAN'
+    ? 'İlk plan: ' + planGunAy(r.yeni_tarih)
+    : (r.eski_tarih && r.yeni_tarih && r.eski_tarih !== r.yeni_tarih)
+      ? planGunAy(r.eski_tarih) + ' → ' + planGunAy(r.yeni_tarih)
+      : (TESLIM_TUR_ETIKET[r.tur] || r.tur || '') + ': ' + planGunAy(r.yeni_tarih || r.eski_tarih)
+  const parcalar = [
+    bas,
+    nedenAd ? nedenAd + (sorumlu ? ' (' + sorumlu + ')' : '') : null,
+    kim,
+    gec > 0 ? gec + ' gün gecikme' : null,
+  ].filter(Boolean)
+  // Gerekçeyi SİSTEM mi türetti, danışman mı seçti — defterin ayırt ettiği şey bu.
+  const kaynakCip = r.neden_kaynak === 'OTOMATIK'
+    ? `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-bold align-middle">sistem</span>` : ''
+  return `<li class="relative pl-4 pb-2 last:pb-0">
+      <span class="absolute left-0 top-[6px] w-[7px] h-[7px] rounded-full bg-outline"></span>
+      <p class="text-label-md text-on-surface leading-snug">${kacis(parcalar.join(' · '))}${kaynakCip}</p>
+      ${r.neden_not ? `<p class="text-[11px] text-on-surface-variant leading-snug">${kacis(r.neden_not)}</p>` : ''}
+      <p class="text-[10px] text-on-surface-variant">${kacis(fmtTarih(r.created_at))}</p>
+    </li>`
+}
+
+function teslimPlaniKartHtml() {
+  // İptal edilmiş dosyada teslim planı anlamsız; ihale (muaf) dosyada plan
+  // hiç tutulmaz (v_teslim_plani.plan_muaf) — kart basılmaz.
+  if (S.durum === 'IPTAL') return ''
+  const p = TESLIM_PLAN
+  if (p?.plan_muaf) return ''
+
+  // 1) ÜST SATIR — tarih + sınıf rozeti + plan tipi + erteleme sayısı
+  const k = p ? TESLIM_SINIF[p.sinif] : null
+  const gec = Number(p?.gecikme_gun) || 0
+  const rozetMetin = k ? [k.etiket, gec > 0 ? gec + ' gün geç' : ''].filter(Boolean).join(' · ') : ''
+  const rozet = rozetMetin
+    ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full ${k.cip} text-[11px] font-bold whitespace-nowrap">${kacis(rozetMetin)}</span>` : ''
+  const tipCip = p?.planlanan
+    ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-bold" title="${p.plan_tipi === 'TAHMIN' ? 'Tahmin — gecikme sayacı işlemez' : 'Müşteriye söz verildi'}">${p.plan_tipi === 'TAHMIN' ? 'TAHMİN' : 'SÖZ'}</span>` : ''
+  const ertN = Number(p?.erteleme_sayisi) || 0
+  const ertCip = ertN > 0
+    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-bold">${ertN}. erteleme</span>` : ''
+
+  const ustHtml = p?.planlanan
+    ? `<div class="flex items-baseline gap-2 flex-wrap">
+         <span class="text-title-md font-black text-on-surface tabular-nums">${kacis(fmtTarihKisa(p.planlanan))}</span>
+         ${rozet}${tipCip}${ertCip}
+       </div>`
+    : `<div class="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2">
+         ${mat('event_busy', 'text-[18px]')}<span class="text-label-md font-bold">Teslim planı girilmemiş</span>
+       </div>`
+
+  // 2) SİSTEM TEŞHİSİ — yalnız dosya GECİKMİŞSE. Gecikmemiş dosyada bu satır
+  //    gereksiz gürültü olur (danışman zaten bir şey beklemiyor).
+  const t = TESLIM_TESHIS
+  const teshisHtml = (gec > 0 && t?.aciklama) ? `
+    <div class="mt-3 flex items-start gap-2 rounded-lg bg-surface-container-low border border-outline-variant px-3 py-2">
+      ${mat('troubleshoot', 'text-[17px] text-primary shrink-0 mt-[1px]')}
+      <p class="text-label-md text-on-surface leading-snug">
+        <span class="font-bold">Sistem:</span> ${kacis(t.aciklama)}${
+          TESLIM_SORUMLU_ETIKET[t.sorumlu] ? ` — <span class="font-bold">${kacis(TESLIM_SORUMLU_ETIKET[t.sorumlu])}</span>` : ''}
+      </p>
+    </div>` : ''
+
+  // 3) ERTELEME GEÇMİŞİ — defter boşsa bölüm HİÇ ÇİZİLMEZ.
+  const defterHtml = TESLIM_DEFTER.length ? `
+    <div class="mt-3 pt-3 border-t border-outline-variant">
+      <p class="text-[11px] font-bold text-on-surface-variant uppercase mb-2">Plan Geçmişi</p>
+      <ul class="border-l border-outline-variant ml-[3px] space-y-0">${TESLIM_DEFTER.map(teslimDefterSatiri).join('')}</ul>
+    </div>` : ''
+
+  // 4) DÜĞME — pencereyi BURADA AÇMIYORUZ. Tarih/gerekçe penceresi Sipariş
+  //    Merkezi'nde yaşıyor (teslim_plani_degistir / teslim_plani_goc ayrımı,
+  //    neden listesi, not_zorunlu kuralı hep orada). Aynı pencereyi ikinci kez
+  //    yazmak bu projede defalarca ayrışmaya yol açtı — TEK KAYNAK kalsın.
+  //    Planı olan / olmayan ayrımını yalnız ETİKET yansıtır; hangi pencerenin
+  //    açılacağına Sipariş Merkezi karar verir.
+  const btnHtml = S.durum === 'ACIK' ? `
+    <a href="siparis.html?id=${encodeURIComponent(S.id)}&gerekce=1"
+       class="mt-3 w-full px-3 py-2.5 rounded-lg border border-outline-variant text-on-surface text-label-md font-bold hover:bg-surface-container-low flex items-center justify-center gap-1.5">
+      ${mat('edit_calendar', 'text-[16px]')} ${p?.planlanan ? 'Tarih / gerekçe' : 'Tarih gir'}</a>` : ''
+
+  return `<div class="bg-surface-container-lowest border ${(!p?.planlanan || gec > 0) ? 'border-amber-300' : 'border-outline-variant'} rounded-xl custom-shadow p-4">
+    <h3 class="font-bold text-on-surface flex items-center gap-2 mb-3">${mat('event', 'text-[20px] text-primary')} Teslim Planı</h3>
+    ${ustHtml}${teshisHtml}${defterHtml}${btnHtml}
+  </div>`
+}
+
 function teslimatKartHtml() {
   if (satildiMi() && S.durum === 'TESLIM_EDILDI') return ''
   const td = S.teslimat_durumu
@@ -1530,7 +1690,7 @@ function teslimatKartHtml() {
   // ⚠️ Sigorta artık POLİÇEDEN otomatik okunuyor (sql/131). Elle işaret yalnız
   //   İSTİSNA: poliçe sigorta modülüne henüz girilmediyse sigorta birimi
   //   sorumluluğu üstlenerek kapıyı açabilir. Düğme bu yüzden "istisna" dilinde.
-  const sigortaSart = sartlar.find(x => x.ad === 'Sigorta Tamamlandı')
+  const sigortaSart = sartlar.find(x => x.kod === 'SIGORTA')
   const policeVar = !!sigortaSart?.police_no
   const sigortaYetki = !!(BEN && (BEN.master_admin || BEN.rol === 'yonetici' ||
     BEN.rol === 'sigorta_yetkili' || BEN.rol === 'sigorta_personel' || BEN.mudur_birim === 'sigorta'))
@@ -1541,7 +1701,7 @@ function teslimatKartHtml() {
   // Evrak şartı da artık ÖLÇÜLÜYOR (sql/134): iki belgenin imzası onaylıysa
   //   kendiliğinden yeşil. Elle işaret yalnız istisna — tarayıcı yok, belge
   //   fiziksel dosyada gibi durumlarda dosya kilitlenmesin diye.
-  const evrakSart = sartlar.find(x => x.ad === 'Evraklar Tamamlandı')
+  const evrakSart = sartlar.find(x => x.kod === 'EVRAK')
   if (evrakSart && !evrakSart.tamam && !kilitliMi()) {
     isaretBtn.push(`<button id="sdEvrakTamam" class="flex-1 min-w-[150px] px-3 py-2 rounded-lg border border-amber-400 bg-amber-50 text-amber-900 text-label-md font-bold hover:bg-amber-100 flex items-center justify-center gap-1.5">${mat('task', 'text-[16px]')} İmzasız Onayla (istisna)</button>`)
   }
@@ -1553,7 +1713,7 @@ function teslimatKartHtml() {
   //    yüzden noter/yevmiye/yeni ruhsat ONAYA GÖNDERMEDEN ÖNCE alınıyor.
   //    Bu yüzden diğer istisna düğmelerinin arasına değil, listenin üstüne
   //    ve birincil renkle konuyor: danışman burada durup girecek.
-  const noterSart = sartlar.find(x => x.ad === 'Noter Devri Kaydedildi')
+  const noterSart = sartlar.find(x => x.kod === 'NOTER_DEVRI')
   const noterEksik = noterSart && !noterSart.tamam
   const noterHtml = (noterSart && noterDuzenlenebilir()) ? `<button id="sdNoterDevri" class="w-full mb-3 px-3 py-2.5 rounded-lg ${noterEksik
       ? 'bg-primary text-on-primary hover:opacity-90'
