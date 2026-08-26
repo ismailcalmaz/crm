@@ -18,6 +18,8 @@ import { camEtiketiBasar, ilanYonetir, kullanimYonetir, operasyonIsiGorur, opera
 // Dosya işlemleri TEK KAYNAK — bu dosyada ayrı upload/webp kopyası TUTMA.
 import { fotograflariYukle, fotografSil, evrakAc, evrakImzaliUrl, evrakiYukle, evrakSil as dsEvrakSil, fotoUrl as dsFotoUrl } from './arac-dosya.js'
 import { olayAdi, olayDetay, olaySistemMi, AI_SISTEM } from './veri.js'   // olay anlatımı tek kaynak
+// Teslim planı çipleri TEK KAYNAK (sql/244-245). Burada yeniden tanımlama.
+import { TESLIM_CIPLERI, gunEkleISO, bugunISO } from './veri.js'
 
 // Şirket kullanımına ALINAMAYAN durumlar — müşteriye söz verilmiş araçlar.
 // Sunucudaki kullanimdaki_tahsis_et() ile BİREBİR aynı liste (sql/165);
@@ -392,9 +394,14 @@ function rezervasyonAc(mod) {
   const a = sonArac
   const sipMod = mod === 'sip'
   let secMusteri = null, mZaman, sure = '24h'
+  // Planlanan teslim tarihi — VARSAYILAN SEÇİLİ ÇİP YOK, danışman bilinçli seçsin.
+  // Yalnız SİPARİŞTE sorulur; rezervasyon geçici kilittir, teslim sözü içermez.
+  let teslimCip = null
   const araclabel = [a.marka, a.model, a.yil].filter(Boolean).join(' ').toLocaleUpperCase('tr')
   const altSatir = [tanimAd('RENK', a.renk), tanimAd('KASA_TIPI', a.kasa_tipi), a.km ? Number(a.km).toLocaleString('tr-TR') + ' KM' : null].filter(Boolean).join(' • ').toLocaleUpperCase('tr')
   const sureBtn = (kod, etiket, ikon) => `<button type="button" data-sure="${kod}" class="rezSureBtn py-3 rounded-xl text-sm font-bold transition-all ${kod === sure ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'hover:bg-surface-container-highest text-on-surface-variant'} ${ikon ? 'flex items-center justify-center gap-1' : ''}">${ikon ? mat(ikon, 'text-[18px]') : ''}${etiket}</button>`
+  // Teslim çipi düğmesi — TESLIM_CIPLERI'nden çizilir, hiçbiri başta seçili değil.
+  const teslimBtn = c => `<button type="button" data-tcip="${kacis(c.kod)}" class="rezTeslimBtn py-2.5 px-1 rounded-xl text-[12px] font-bold transition-all hover:bg-surface-container-highest text-on-surface-variant">${kacis(c.etiket)}</button>`
   const ov = document.createElement('div')
   ov.className = 'fixed inset-0 z-[95] flex'
   ov.innerHTML = `
@@ -560,6 +567,20 @@ function rezervasyonAc(mod) {
             <span class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">${mat('expand_more')}</span>
           </div>
         </div>
+        ${/* PLANLANAN TESLİM TARİHİ (sql/244-245). Siparişte ZORUNLU, rezervasyonda
+              hiç sorulmaz. Tarih INSERT'te doğrudan yazılır; sonradan değişiklik
+              yalnız teslim_plani_degistir() RPC'siyle olur (BR-0142) — bu pencere
+              yalnızca ilk sözü kaydeder.
+              "Henüz netleşmedi" tarihi boş bırakmaz: +7 gün TAHMİN yazar, böylece
+              kayıt plansız kalmaz ama kırmızı mekanizması işlemez. */''}
+        <div id="rezTeslimSar" class="hidden space-y-1.5">
+          <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">Planlanan Teslim Tarihi *</label>
+          <div class="grid grid-cols-3 gap-2 p-1 bg-surface-container rounded-2xl">
+            ${TESLIM_CIPLERI.map(teslimBtn).join('')}
+          </div>
+          <input id="rezTeslimTarih" type="date" min="${bugunISO()}" class="hidden mt-2 w-full p-3 bg-surface rounded-xl border border-outline-variant/60 focus:border-primary outline-none text-sm" />
+          <p id="rezTeslimOzet" class="hidden text-[11px] font-bold text-[#047857] bg-[#ECFDF5] border border-[#10B981]/25 rounded-lg px-3 py-2"></p>
+        </div>
         <!-- Rezervasyon nedeni -->
         <div id="rezNedenSar" class="space-y-1.5">
           <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">Rezervasyon Nedeni</label>
@@ -601,8 +622,47 @@ function rezervasyonAc(mod) {
     q('#rezSureSar').classList.add('hidden')
     q('#rezNedenSar').classList.add('hidden')
     q('#rezSatisTipiSar').classList.remove('hidden')   // sipariş = satış tipi sorulur
+    q('#rezTeslimSar').classList.remove('hidden')      // sipariş = teslim tarihi sorulur
     q('#rezKaydetMetin').textContent = 'Sipariş Oluştur ve Dosyayı Aç'
   }
+
+  // Seçili çipten planlanan tarih + plan tipi. Seçim yoksa null döner
+  // (kaydet doğrulaması bunu yakalar). Tarih hesabı gunEkleISO ile — burada
+  // ikinci bir tarih matematiği YAZMA.
+  const teslimSecimi = () => {
+    if (!teslimCip) return null
+    const c = TESLIM_CIPLERI.find(x => x.kod === teslimCip)
+    if (!c) return null
+    if (c.kod === 'ozel') {
+      const t = (q('#rezTeslimTarih')?.value || '').trim()
+      // ⚠️ min="" HTML kısıtı klavyeden/yapıştırmadan aşılabilir. Sunucu INSERT'te
+      //   geçmiş tarihi REDDETMİYOR (yasak yalnız teslim_plani_degistir'de), yani
+      //   burada durdurmazsak doğar doğmaz "gecikmiş" sipariş açılır.
+      return (t && t >= bugunISO()) ? { tarih: t, tip: c.tip } : null
+    }
+    return { tarih: gunEkleISO(c.gun), tip: c.tip }
+  }
+  const teslimOzetYaz = () => {
+    const p = q('#rezTeslimOzet'); if (!p) return
+    const s = teslimSecimi()
+    p.classList.toggle('hidden', !s)
+    if (!s) { p.textContent = ''; return }
+    p.textContent = s.tip === 'TAHMIN'
+      ? 'Tahmini teslim: ' + fmtTarihKisa(s.tarih) + ' — tarih netleşmedi, gecikme sayacı işlemez.'
+      : 'Müşteriye verilen teslim sözü: ' + fmtTarihKisa(s.tarih)
+  }
+  ov.querySelectorAll('.rezTeslimBtn').forEach(b => b.addEventListener('click', () => {
+    teslimCip = b.dataset.tcip
+    ov.querySelectorAll('.rezTeslimBtn').forEach(x => {
+      const aktif = x.dataset.tcip === teslimCip
+      x.classList.toggle('bg-primary', aktif); x.classList.toggle('text-on-primary', aktif)
+      x.classList.toggle('shadow-lg', aktif); x.classList.toggle('shadow-primary/20', aktif)
+      x.classList.toggle('hover:bg-surface-container-highest', !aktif); x.classList.toggle('text-on-surface-variant', !aktif)
+    })
+    q('#rezTeslimTarih').classList.toggle('hidden', teslimCip !== 'ozel')
+    teslimOzetYaz()
+  }))
+  q('#rezTeslimTarih').addEventListener('change', teslimOzetYaz)
 
   // Süre segment kontrolü
   ov.querySelectorAll('.rezSureBtn').forEach(b => b.addEventListener('click', () => {
@@ -626,7 +686,10 @@ function rezervasyonAc(mod) {
   //   Ödeme bilgisi HER MODDA gösterilir; erken çıkış yalnız moda özgü
   //   (süre/neden/buton metni) kısımdan önce.
   q('#rezKapora').addEventListener('input', () => {
-    const kaporaVar = !!(q('#rezKapora').value || '').replace(/\D/g, '')
+    // ⚠️ Sayısal karşılaştırma: '0' yazılınca eskiden true dönüyordu ve teslim
+    //   alanı beliriyordu ama insert koşulu (kapora > 0) false olduğu için seçim
+    //   sessizce atılıyordu. İki koşul artık birebir aynı.
+    const kaporaVar = Number((q('#rezKapora').value || '').replace(/\D/g, '') || 0) > 0
     // Kapora varsa ODEME BILGISI zorunlu — cariye tahsilat olarak duser (sql/172)
     const ko = q('#rezKaporaOdeme')
     ko.classList.toggle('hidden', !kaporaVar); ko.classList.toggle('grid', kaporaVar)
@@ -635,6 +698,11 @@ function rezervasyonAc(mod) {
       ks.innerHTML = '<option value="">Seçiniz…</option>' +
         KASALAR.map(k => `<option value="${kacis(k.id)}">${kacis(k.ad)}</option>`).join('')
     }
+    // ⚠️ Teslim tarihi çipi ERKEN DÖNÜŞTEN ÖNCE ayarlanır. Görünürlük koşulu
+    //   kaydetteki siparisMi ile BİREBİR aynı (sipMod || kapora > 0); aşağıya
+    //   koysaydık kaporalı rezervasyonda alan hiç çıkmaz, kaydet ise
+    //   "Planlanan teslim tarihi seçin." diye duvara toslardı.
+    q('#rezTeslimSar').classList.toggle('hidden', !(sipMod || kaporaVar))
     if (sipMod) return   // sipariş modunda süre/neden zaten gizli, mod değişmez
     q('#rezKaporaNot').classList.toggle('hidden', !kaporaVar)
     q('#rezSureSar').classList.toggle('hidden', kaporaVar)
@@ -888,6 +956,16 @@ function rezervasyonAc(mod) {
     //    yine boş kalırdı — bugüne kadarki durum tam olarak buydu.
     const satisTipi = siparisMi ? (q('#rezSatisTipi')?.value || '') : ''
     if (siparisMi && !satisTipi) return hata('Satış tipi zorunlu (Takas, Senetli, Vadeli, Otosor…).')
+    // Planlanan teslim tarihi — sunucu ŞU AN zorunlu tutmuyor, zorunluluk ayrı
+    // migration ile gelecek. O yüzden kapı BURADA: plansız sipariş, teslim
+    // panosunda "Plan yok" kırmızısı olarak birikirdi.
+    // İhale satışında sunucu plan_muaf=true damgalıyor (sql/245) — takip dışı.
+    // Tarih sormak anlamsız plan kaydı üretirdi.
+    const teslimGerekli = siparisMi && satisTipi !== 'IHALE'
+    const teslim = teslimGerekli ? teslimSecimi() : null
+    if (teslimGerekli && !teslim) return hata(teslimCip === 'ozel'
+      ? 'Planlanan teslim tarihi seçin — takvimden bir gün işaretleyin.'
+      : 'Planlanan teslim tarihi seçin.')
     // Kapora cariye tahsilat olarak duser; hangi kasaya girdigi bilinmeden
     // yazmak finansa mutabakatsiz satir birakir (sql/172).
     if (kapora > 0 && !(q('#rezKaporaKasa')?.value)) return hata('Kapora hangi kasaya girdi? Seçmeden kaydedilemez — tahsilat cari deftere bu hesaba yazılıyor.')
@@ -920,6 +998,10 @@ function rezervasyonAc(mod) {
       rezervasyon_nedeni: siparisMi ? (kapora > 0 ? 'KAPORA_ALINDI' : null) : (q('#rezNeden').value || null),
       kapora_tutar: kapora, rezervasyon_notu: (q('#rezNot').value || '').trim() || null,
       satis_sekli: satisTipi || null,
+      // Teslim planı (sql/244-245) — YALNIZ INSERT'te doğrudan yazılabilir.
+      // Rezervasyonda null; rezervasyon teslim sözü değildir.
+      planlanan_teslim_tarihi: teslim?.tarih || null,
+      plan_tipi: teslim?.tip || null,
       // Kapora ödeme bilgisi → trigger bunu cariye TAHSILAT olarak yazar (sql/172)
       kapora_odeme_tipi: kapora > 0 ? (q('#rezKaporaTip')?.value || null) : null,
       kapora_kasa_id: kapora > 0 ? (q('#rezKaporaKasa')?.value || null) : null,

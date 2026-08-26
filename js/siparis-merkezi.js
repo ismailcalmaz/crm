@@ -18,9 +18,9 @@
 //     • olaylar'a yazma yalnız olay_ekle() RPC ile.
 // =====================================================================
 import { supabase } from './supabase-client.js'
-import { danismanMap, danismanAdi, fmtPara, fmtTarih, kacis, trBuyuk, buyuk, telNo, dbHata, TESLIMAT_DURUM_ETIKET, rezervasyonNedenEtiket, disLokasyon } from './veri.js'
-import { mat, basHarf, uyari, binlikInputKur } from './stitch-ui.js'
-import { satisMuduruMu } from './yetki.js'
+import { danismanMap, danismanAdi, fmtPara, fmtTarih, fmtTarihKisa, kacis, trBuyuk, buyuk, telNo, dbHata, TESLIMAT_DURUM_ETIKET, rezervasyonNedenEtiket, disLokasyon, TESLIM_SINIF, TESLIM_SORUMLU_ETIKET, TESLIM_CIPLERI, bugunISO, gunEkleISO } from './veri.js'
+import { mat, basHarf, uyari, binlikInputKur, cipler, toast } from './stitch-ui.js'
+import { satisMuduruMu, mudurMu } from './yetki.js'
 import { teslimPencereAc } from './teslim-pencere.js'
 
 const KOK = () => document.getElementById('kok')
@@ -30,11 +30,15 @@ let SIP = []                 // asama=SIPARIS siparişleri (+ araç/müşteri em
 let DMAP = {}
 let KASA = []
 let IPTAL_NEDENLERI = []      // [{kod, ad}]
+let GECIKME_NEDENLERI = []    // tanimlar TESLIM_GECIKME_NEDENI → [{kod, ad, ozellikler:{sorumlu, not_zorunlu}}]
 let KAPAK = new Map()         // arac_id → kapak fotoğrafı dosya_yolu (sira 0)
 let acikDrawer = null         // sağdan açılan hızlı bakış panelinin sipariş id'si
 let tikZaman = null           // tek tık / çift tık ayrımı için gecikme
 let NOT_BALON = null          // açık görüşme notu balonu
-const filtre = { arama: '', danisman: '', durum: '' }
+let PLAN = new Map()          // siparis_id -> v_teslim_plani satırı (sınıf/sıra SUNUCUDAN)
+let BUGUN_TAMAM = 0           // bugüne planlanıp TESLİM EDİLMİŞ dosya sayısı
+let spmPlan = null            // Stoktan Sipariş modalında seçilen teslim planı
+const filtre = { arama: '', danisman: '', durum: '', sinif: '' }
 
 const one = v => (Array.isArray(v) ? v[0] : v) || null
 const B = v => kacis(buyuk(v ?? ''))
@@ -54,12 +58,20 @@ export async function siparisMerkeziKur(d) {
 }
 
 async function yukle() {
-  const [{ data: kasa }, { data: iptalN }] = await Promise.all([
+  const [{ data: kasa, error: kErr }, { data: iptalN, error: iErr }, { data: gecikmeN, error: gErr }] = await Promise.all([
     supabase.from('kasa_hesaplari').select('id, ad, tip').eq('aktif', true).order('sira'),
     supabase.from('tanimlar').select('kod, ad, sira').eq('tip', 'IPTAL_NEDENI').eq('aktif', true).order('sira'),
+    // Teslim gecikme gerekçeleri (sql/244) — "Tarih / gerekçe" penceresinde
+    // kullanılır. ozellikler->>'sorumlu' kimin çözeceğini, 'not_zorunlu' ise
+    // açıklamanın şart olup olmadığını söyler; ikisi de sunucuda da dayatılır.
+    supabase.from('tanimlar').select('kod, ad, ozellikler').eq('tip', 'TESLIM_GECIKME_NEDENI').eq('aktif', true).order('sira'),
   ])
+  if (kErr) dbHata('kasa hesapları', kErr)
+  if (iErr) dbHata('iptal nedenleri', iErr)
+  if (gErr) dbHata('teslim gecikme nedenleri', gErr)
   KASA = kasa || []
   IPTAL_NEDENLERI = iptalN || []
+  GECIKME_NEDENLERI = gecikmeN || []
 
   const { data, error } = await supabase.from('siparisler')
     .select(`id, arac_id, alici_musteri_id, danisman_id, olusturan, asama, durum, teslimat_durumu,
@@ -78,6 +90,30 @@ async function yukle() {
     .order('created_at', { ascending: false })
   if (error) { dbHata('siparis yükle', error); KOK().innerHTML = uyari('Siparişler okunamadı: ' + kacis(error.message)); return }
   SIP = data || []
+
+  // ---- Teslim planı (sql/244-245) ----
+  // ⚠️ Sınıf (sinif) ve sıra (sira_anahtari) SUNUCUDA hesaplanır. Aynı kuralı
+  //    burada TEKRARLAMA: iki yerde yaşayan kural sessizce eskir.
+  // ⚠️ PostgREST varsayılan 1000 satır limiti sessizce keser (CLAUDE.md §5/3).
+  //    Limiti açıkça veriyoruz; dolarsa sayfalama gerekir, uyarı basılır.
+  const PLAN_LIMIT = 2000
+  PLAN = new Map()
+  const { data: plan, error: pErr } = await supabase.from('v_teslim_plani').select('*').limit(PLAN_LIMIT)
+  if (pErr) dbHata('teslim planı', pErr)
+  if ((plan || []).length >= PLAN_LIMIT) console.warn('[teslim] v_teslim_plani ' + plan.length + ' satır döndü — limite dayandı, sayfalama gerekli')
+  for (const p of (plan || [])) PLAN.set(p.siparis_id, p)
+
+  // "Bugün Teslim" sayacının TAMAM ayağı: teslim edilen sipariş v_teslim_plani'dan
+  // DÜŞER (view yalnız açık + teslim edilmemiş dosyaları taşır) ve ana listede de
+  // yoktur (durum != TESLIM_EDILDI süzgeci). O yüzden ayrı sayılır.
+  // ⚠️ `durum` SÜZGECİ ŞART: iptal edilmiş ama teslim_tarihi dolu kalan dosya
+  //    (iptal, teslim damgasını silmiyor) sayacı şişiriyordu — "3 tamam"
+  //    yazarken bugün gerçekte 2 araç teslim edilmişti. "Tamam" = TESLIM_EDILDI.
+  const { data: tesEdilen, error: teErr } = await supabase.from('siparisler')
+    .select('id').eq('planlanan_teslim_tarihi', bugunISO())
+    .eq('durum', 'TESLIM_EDILDI').not('teslim_tarihi', 'is', null).limit(1000)
+  if (teErr) dbHata('bugün teslim edilen', teErr)
+  BUGUN_TAMAM = (tesEdilen || []).length
 
   // Sipariş bazlı bakiye
   const { data: bak, error: bErr } = await supabase.from('v_siparis_bakiye').select('siparis_id, bakiye')
@@ -110,7 +146,17 @@ async function yukle() {
   for (const s of SIP) {
     s._bakiye = bakMap.has(s.id) ? bakMap.get(s.id) : null
     s._sonHareket = sonMap.get(s.id) || s.created_at
+    s._plan = PLAN.get(s.id) || null
+    s._sinif = s._plan?.sinif || null
+    // Planı olmayan satır (ör. iptal edilmiş dosya view'da yok) en dibe:
+    // 9 > sunucudaki en büyük sira_anahtari (7 = muaf).
+    s._sira = s._plan?.sira_anahtari != null ? Number(s._plan.sira_anahtari) : 9
+    s._gecikme = Number(s._plan?.gecikme_gun) || 0
   }
+  // Sıra: sunucunun sira_anahtari ARTAN -> en çok geciken üstte -> en yeni üstte.
+  // ⚠️ Sınıflandırma burada YOK, yalnız sunucudan gelen anahtarla sıralama var.
+  SIP.sort((a, b) => (a._sira - b._sira) || (b._gecikme - a._gecikme) ||
+    (new Date(b.created_at) - new Date(a.created_at)))
   ciz()
 }
 
@@ -217,6 +263,8 @@ function filtreli() {
     //   SİLMİYORUZ, GİZLİYORUZ: "İptal" süzgecine basınca hepsi gelir —
     //   iptal geçmişi denetim için gerekli.
     if (s.durum === 'IPTAL' && filtre.durum !== 'IPTAL') return false
+    // Teslim planı sınıfı süzgeci (plansız şeridindeki "Bu grubu göster").
+    if (filtre.sinif && s._sinif !== filtre.sinif) return false
     if (filtre.danisman && s.danisman_id !== filtre.danisman) return false
     if (filtre.durum) {
       const d = filtre.durum
@@ -246,11 +294,25 @@ function kpiHesap() {
   const gecerli = iptalHaric()      // tüm sayaçlar bu küme üzerinde
   const acik = gecerli.filter(acikMi)
   const eksikTahsilat = acik.reduce((a, s) => a + (typeof s._bakiye === 'number' && s._bakiye < -0.005 ? -s._bakiye : 0), 0)
+  // ⚠️ "Bugün Teslim" v_teslim_plani'dan okunur, ana listeden DEĞİL: liste
+  //    teslim edilenleri hiç yüklemiyor, oradan sayılsa "tamam" daima 0 çıkardı.
+  // ⚠️ KPI ile TABLO BAŞLIĞI AYNI KÜMEYİ SAYAR. "BUGÜN TESLİM" grup başlığı
+  //    veri.js TESLIM_SINIF'taki `grup` alanından geliyor ve orada BUGUN ile
+  //    TOLERANS ("Dün olmadı") AYNI gruba düşüyor. Sayaç yalnız BUGUN sayınca
+  //    kullanıcı başlıkta 5, kartta 3 okuyordu. Küme tek yerden türetilir:
+  const bugunGrubu = ['BUGUN', 'TOLERANS']
+  const planlar = [...PLAN.values()]
+  const bugunTeslim = {
+    planli: planlar.filter(p => bugunGrubu.includes(p.sinif)).length + BUGUN_TAMAM,
+    tamam: BUGUN_TAMAM,
+    geciken: planlar.filter(p => p.sinif === 'GECIKEN' || p.sinif === 'GECIKEN_CEVAPLI').length,
+  }
   return {
     toplam: gecerli.length,
     bugun: gecerli.filter(s => bugunMu(s.created_at)).length,
     onayBekleyen: gecerli.filter(s => s.teslimat_durumu === 'ONAY_BEKLIYOR').length,
     eksikTahsilat,
+    bugunTeslim,
     bugunNoter: gecerli.filter(s => bugunMu(s.satis_tarihi)).length,
     // ⚠️ "Tamamlanan Satış" kartı KALDIRILDI: teslim edilen siparişler artık
     //    yüklenmediği için o sayaç daima 0 gösterirdi — yanlış bilgi.
@@ -261,29 +323,41 @@ function kpiHesap() {
   }
 }
 
-function kpiKart(ikon, ikonBg, sayi, etiket) {
+function kpiKart(ikon, ikonBg, sayi, etiket, alt = '') {
   return `<div class="bg-surface-container-lowest p-lg rounded-2xl border border-outline-variant custom-shadow hover:shadow-md transition-shadow">
     <div class="flex justify-between items-start mb-3">
       <div class="p-2 rounded-lg ${ikonBg}">${mat(ikon, 'text-[22px]')}</div>
     </div>
     <div class="text-2xl md:text-3xl font-black text-on-surface leading-none mb-1">${sayi}</div>
     <div class="text-label-sm text-on-surface-variant uppercase tracking-wide font-medium">${etiket}</div>
+    ${alt ? `<div class="text-[11px] text-on-surface-variant mt-1 leading-tight">${kacis(alt)}</div>` : ''}
   </div>`
 }
 
 // ---------- Çizim ----------
 function ciz() {
+  // Plansız dosya kalmadıysa süzgeci ÜZERİNDE BIRAKMA: şerit de kaybolduğu
+  // için kullanıcı boş listeye bakıp süzgeci nereden kaldıracağını aramaz.
+  if (filtre.sinif === 'PLANSIZ' && !SIP.some(s => s.durum !== 'IPTAL' && s._sinif === 'PLANSIZ')) filtre.sinif = ''
   const k = kpiHesap()
   const list = filtreli()
 
-  const kpiHtml = `<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
-    ${kpiKart('fact_check', 'bg-primary-fixed text-primary', k.toplam, 'Toplam Sipariş')}
-    ${kpiKart('today', 'bg-blue-100 text-blue-700', k.bugun, 'Bugün Açılan')}
-    ${kpiKart('verified', 'bg-amber-100 text-amber-700', k.onayBekleyen, 'Teslim Onay Bekleyen')}
-    ${kpiKart('payments', 'bg-error-container text-on-error-container', fmtPara(k.eksikTahsilat), 'Eksik Tahsilat')}
-    ${kpiKart('gavel', 'bg-surface-container-high text-on-surface', k.bugunNoter, 'Bugünkü Noter')}
-    ${kpiKart('local_shipping', 'bg-secondary-container text-on-secondary-container', k.teslimeHazir, 'Teslime Hazır')}
-  </div>`
+  // ⚠️ KART SAYISI ROLE GÖRE DEĞİŞİR (Göksenil kararı): "Eksik Tahsilat"
+  //    danışmana GÖSTERİLMEZ — mali toplam onun işi değil, satırda zaten
+  //    "Mali durum gizli" çipini görüyor. Satış müdürü / finans müdürü /
+  //    master görmeye devam eder: müdür 7 kart, danışman 6 kart.
+  const maliGorur = satisMuduruMu(BEN) || mudurMu(BEN, 'finans')
+  const kartlar = [
+    kpiKart('fact_check', 'bg-primary-fixed text-primary', k.toplam, 'Toplam Sipariş'),
+    kpiKart('today', 'bg-blue-100 text-blue-700', k.bugun, 'Bugün Açılan'),
+    kpiKart('local_shipping', 'bg-blue-100 text-blue-700', k.bugunTeslim.planli, 'Bugün Teslim',
+      `${k.bugunTeslim.planli} planlı · ${k.bugunTeslim.tamam} tamam · ${k.bugunTeslim.geciken} geciken`),
+    kpiKart('verified', 'bg-amber-100 text-amber-700', k.onayBekleyen, 'Teslim Onay Bekleyen'),
+    maliGorur ? kpiKart('payments', 'bg-error-container text-on-error-container', fmtPara(k.eksikTahsilat), 'Eksik Tahsilat') : '',
+    kpiKart('gavel', 'bg-surface-container-high text-on-surface', k.bugunNoter, 'Bugünkü Noter'),
+    kpiKart('done_all', 'bg-secondary-container text-on-secondary-container', k.teslimeHazir, 'Teslime Hazır'),
+  ].filter(Boolean)
+  const kpiHtml = `<div class="grid grid-cols-2 md:grid-cols-3 ${kartlar.length === 7 ? 'xl:grid-cols-7' : 'xl:grid-cols-6'} gap-3 md:gap-4">${kartlar.join('')}</div>`
 
   const danOpts = [...new Set(SIP.map(s => s.danisman_id).filter(Boolean))]
     .map(id => `<option value="${id}" ${filtre.danisman === id ? 'selected' : ''}>${kacis(danismanAdi(DMAP, id))}</option>`).join('')
@@ -299,7 +373,7 @@ function ciz() {
     </div>
     <select id="spDanisman" class="bg-surface-container-low border-none rounded-xl px-4 py-2.5 text-body-sm font-semibold focus:ring-2 focus:ring-primary/20"><option value="">Danışman Seçiniz</option>${danOpts}</select>
     <select id="spDurum" class="bg-surface-container-low border-none rounded-xl px-4 py-2.5 text-body-sm font-semibold focus:ring-2 focus:ring-primary/20">${durumOpts}</select>
-    ${(filtre.arama || filtre.danisman || filtre.durum) ? `<button id="spTemizle" class="text-error text-label-md font-bold px-3 py-2 hover:bg-error/5 rounded-lg">Filtreyi Temizle</button>` : ''}
+    ${(filtre.arama || filtre.danisman || filtre.durum || filtre.sinif) ? `<button id="spTemizle" class="text-error text-label-md font-bold px-3 py-2 hover:bg-error/5 rounded-lg">Filtreyi Temizle</button>` : ''}
     <div class="h-8 w-px bg-outline-variant mx-1"></div>
     <button id="spExcel" title="Excel (CSV) indir" class="p-2.5 text-on-surface-variant hover:bg-surface-container-high rounded-xl">${mat('file_download')}</button>
     <button id="spYazdir" title="Yazdır" class="p-2.5 text-on-surface-variant hover:bg-surface-container-high rounded-xl">${mat('print')}</button>
@@ -307,8 +381,8 @@ function ciz() {
   </div>`
 
   const govde = list.length
-    ? list.map(satirHtml).join('')
-    : `<tr><td colspan="8" class="py-16 text-center text-on-surface-variant"><div class="flex flex-col items-center gap-2">${mat('inbox', 'text-4xl opacity-30')}<span>${SIP.length ? 'Filtreye uyan sipariş yok.' : 'Henüz siparişe alınmış araç yok. Stoktan sipariş oluştur.'}</span></div></td></tr>`
+    ? tabloGovde(list)
+    : `<tr><td colspan="9" class="py-16 text-center text-on-surface-variant"><div class="flex flex-col items-center gap-2">${mat('inbox', 'text-4xl opacity-30')}<span>${SIP.length ? 'Filtreye uyan sipariş yok.' : 'Henüz siparişe alınmış araç yok. Stoktan sipariş oluştur.'}</span></div></td></tr>`
 
   // Göksenil, 3 Ağu 2026: "listede dosya id'i gizle · ilk kolonda araç kapak
   //   fotoğrafı olsun · burada sağ tarafa doğru bir taşma var onu istemiyorum"
@@ -333,6 +407,17 @@ function ciz() {
         <th class="p-3 font-bold">Araç</th>
         <th class="p-3 font-bold hidden sm:table-cell">Müşteri</th>
         <th class="p-3 font-bold hidden lg:table-cell w-[150px]">Danışman</th>
+        ${/* ⚠️ Mobil tablo tuzağı (table-fixed): kolon genişliği <th>'de
+              tanımlı; th ve td AYNI kırılımda gizlenmezse yuva kayar ve
+              hücreler komşuya biner. İkisi de `hidden xl:table-cell`.
+              ⚠️ KIRILIM lg DEĞİL xl — ÖLÇÜLDÜ: yan menü 260 px + sayfa dolgusu
+              48 px düşünce lg (1024) kabı 716 px kalıyor, sabit kolonlar ise
+              72+150+136+150+130+130 = 768 px istiyor → Araç ve Müşteri'ye
+              -52 px kalıyor, tablo kabı taşıyor ve `sm:overflow-hidden`
+              sağdan kesiyor. xl (1280) kabında 972 px var, sabitler 872 px →
+              artı 100 px. lg altında bilgi kaybolmuyor: Araç hücresindeki
+              tek şeride iniyor. */''}
+        <th class="p-3 font-bold hidden xl:table-cell w-[130px]">Teslim</th>
         <th class="px-2 py-3 sm:p-3 font-bold w-[126px] sm:w-[150px]">Durum / Bakiye<span class="hidden sm:inline"> </span></th>
         <th class="p-3 font-bold hidden md:table-cell w-[130px]">Tahsilat</th>
         <th class="p-3 font-bold text-right hidden sm:table-cell sm:w-[130px]">Kalan Bakiye</th>
@@ -354,10 +439,277 @@ function ciz() {
     </div>
     ${kpiHtml}
     <div class="mt-4 md:mt-6 mb-4">${filtreHtml}</div>
+    ${plansizSeritHtml()}
     ${tabloHtml}
     ${drawerHtml()}
     ${modalKabuk()}`
   baglaOlaylar()
+}
+
+// ---------- Teslim planı (sql/244-245) ----------
+// ⚠️ TEK KAYNAK SUNUCU: sınıf (sinif) ve sıra (sira_anahtari) v_teslim_plani'den
+//    gelir, burada YALNIZ görsel karşılıkları (veri.js TESLIM_SINIF) uygulanır.
+//    Tarih karşılaştırması / "geç mi" hesabı bu dosyada YAPILMAZ.
+
+// Sınıf rozeti: etiket + gecikme varsa "3 gün geç".
+function teslimRozet(s) {
+  const p = s._plan; if (!p) return ''
+  const k = TESLIM_SINIF[p.sinif]; if (!k) return ''
+  const gec = Number(p.gecikme_gun) || 0
+  const metin = [k.etiket, gec > 0 ? gec + ' gün geç' : ''].filter(Boolean).join(' · ')
+  if (!metin) return ''   // ILERI sınıfının etiketi boş — rozet basılmaz, tarih yeter
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded-full ${k.cip} text-[11px] font-bold whitespace-nowrap max-w-full min-w-0"><span class="truncate min-w-0">${kacis(metin)}</span></span>`
+}
+
+// Kaçıncı erteleme — ayrı, küçük rozet. 0 ise hiç basılmaz.
+function ertelemeRozet(s) {
+  const n = Number(s._plan?.erteleme_sayisi) || 0
+  if (n <= 0) return ''
+  return `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-bold whitespace-nowrap">${n}. erteleme</span>`
+}
+
+const planTarihi = p => (p?.planlanan ? fmtTarihKisa(p.planlanan) : '—')
+
+// Teslim planı düğmesi — İKİ AYRI UÇ, tek düğmeye bağlanamazlar:
+//   · planı OLMAYAN dosya → "Tarih gir"        → teslim_plani_goc()
+//   · planı OLAN dosya    → "Tarih / gerekçe"  → teslim_plani_degistir()
+// Göç RPC'si "plan varsa" reddeder, değiştir RPC'si de tarihsiz dosyada
+// "planlanan teslim tarihi gerekli" der; ayrımı düğme yapar ki kullanıcı
+// reddedilen bir pencereyle karşılaşmasın.
+// ⚠️ Göç artık müdüre özel DEĞİL: sql/246 dosyanın danışmanına da ileri/bugün
+//    tarihli plan girme hakkı verdi (geçmiş tarih hâlâ yalnız satış müdürü).
+//    Muaf (ihale) dosyada plan tutulmadığı için düğme hiç basılmaz.
+function planBtnHtml(s) {
+  const p = s._plan
+  if (!p || p.plan_muaf) return ''
+  return p.planlanan
+    ? `<button type="button" data-plan="${s.id}" class="${PLAN_BTN}">Tarih / gerekçe</button>`
+    : `<button type="button" data-goc="${s.id}" class="${PLAN_BTN}">Tarih gir</button>`
+}
+
+// Masaüstü "Teslim" kolonu
+function teslimHucre(s) {
+  if (!s._plan) return `<span class="text-label-sm text-on-surface-variant">—</span>`
+  return `<div class="flex flex-col gap-1 items-start min-w-0 max-w-full">
+    <span class="text-label-md font-semibold text-on-surface tabular-nums">${kacis(planTarihi(s._plan))}</span>
+    ${teslimRozet(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
+  </div>`
+}
+
+// xl altında Araç hücresine inen TEK ŞERİT (kolon orada kapalı — bkz. th yorumu)
+function teslimSeritHtml(s) {
+  if (!s._plan) return ''
+  return `<div class="xl:hidden mt-1 flex flex-wrap items-center gap-1 min-w-0">
+    ${mat('event', 'text-[13px] text-on-surface-variant')}
+    <span class="text-label-sm text-on-surface-variant tabular-nums">${kacis(planTarihi(s._plan))}</span>
+    ${teslimRozet(s)}${ertelemeRozet(s)}${planBtnHtml(s)}
+  </div>`
+}
+
+// Grup başlıklı gövde. Sıra SUNUCUDAN geldiği için aynı gruptaki satırlar
+// zaten ardışık; başlık grup değişince bir kez basılır (colspan = kolon sayısı).
+function tabloGovde(list) {
+  const grubu = s => TESLIM_SINIF[s._sinif]?.grup || null
+  const parca = []
+  let onceki = null
+  for (let i = 0; i < list.length; i++) {
+    const g = grubu(list[i])
+    if (g && g !== onceki) {
+      let n = 0
+      for (let j = i; j < list.length && grubu(list[j]) === g; j++) n++
+      parca.push(`<tr class="bg-surface-container-low/70"><td colspan="9" class="px-3 py-1.5 text-label-sm font-black uppercase tracking-wide text-on-surface-variant">${kacis(g)} · ${n}</td></tr>`)
+    }
+    onceki = g
+    parca.push(satirHtml(list[i]))
+  }
+  return parca.join('')
+}
+
+// Göç şeridi — planlanan tarihi olmayan açık siparişler.
+// Yalnız satış müdürü/master görür: geçmiş tarihli planı SADECE onlar
+// yazabiliyor (teslim_plani_goc RPC'si is_master/is_satis_muduru istiyor),
+// danışmana gösterilse tıklanamayan bir uyarı olurdu.
+function plansizSeritHtml() {
+  if (!satisMuduruMu(BEN)) return ''
+  const n = iptalHaric().filter(s => s._sinif === 'PLANSIZ').length
+  if (!n) return ''
+  const suzuk = filtre.sinif === 'PLANSIZ'
+  return `<div class="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300 bg-[#FFFBEB] px-4 py-3">
+    ${mat('event_busy', 'text-amber-800')}
+    <span class="flex-1 min-w-[200px] text-body-md font-bold text-amber-900">${n} siparişte planlanan teslim tarihi yok — girin</span>
+    <button id="spPlansizSuz" type="button" class="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-label-md font-bold hover:opacity-90">${suzuk ? 'Süzgeci kaldır' : 'Bu grubu göster'}</button>
+  </div>`
+}
+
+// ---------- Göç penceresi: planlanan teslim tarihini GİR ----------
+// ⚠️ Bu kolonlara UPDATE ile DOKUNULAMAZ — trigger reddeder (BR-0142).
+//    Plansız dosyaya ilk tarihi yazmanın tek yolu teslim_plani_goc RPC'si;
+//    farkı GEÇMİŞ TARİH kabul etmesi (söz geçen hafta verilmiş olabilir).
+function gocAc(id) {
+  const s = SIP.find(x => x.id === id); if (!s) return
+  const a = one(s.stok_araclar)
+  // Geçmiş tarihi YALNIZ satış müdürü/master yazabilir (sql/246). Danışmanın
+  // takvimi bugünden başlar — sunucu zaten reddediyor, takvim de göstermesin.
+  const gecmisSerbest = satisMuduruMu(BEN)
+  const kat = document.getElementById('spModalKat')
+  kat.classList.remove('hidden')
+  kat.innerHTML = `<div class="sp-bg absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+    <div class="relative mx-auto mt-[12vh] w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-5 border-b border-outline-variant flex items-center gap-3 bg-surface-container-low">
+        <div class="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary">${mat('event')}</div>
+        <div class="min-w-0"><h2 class="text-lg font-black text-primary">Planlanan Teslim Tarihi</h2>
+          <p class="text-xs text-on-surface-variant truncate">${B(aracBaslik(a))} · ${B(a?.plaka) || '—'}</p></div></div>
+      <div class="p-6 space-y-3">
+        <div id="spgHata" class="hidden bg-error-container text-on-error-container rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Tarih *</label>
+          <input id="spgTarih" type="date" value="${kacis(bugunISO())}" ${gecmisSerbest ? '' : `min="${kacis(bugunISO())}"`} class="${INP} mt-1" />
+          <p class="text-[11px] text-on-surface-variant mt-1">${gecmisSerbest
+            ? 'Müşteriye verilmiş söz geçmişteyse geçmiş tarihi yazın — gerçeği yazmak raporu düzeltir.'
+            : 'Söz geçmiş bir güne verildiyse satış müdürüne bildirin: geçmiş tarihli planı yalnız o kaydedebilir.'}</p></div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Plan Tipi *</label>
+          <select id="spgTip" class="${INP} mt-1">
+            <option value="TAHMIN" selected>Henüz netleşmedi (tahmin)</option>
+            <option value="SOZ">Müşteriye söz verildi</option>
+          </select></div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Not</label>
+          <textarea id="spgNot" rows="2" placeholder="Tarih nereden biliniyor? (görüşme, WhatsApp…)" class="${INP} mt-1 resize-none"></textarea></div>
+      </div>
+      <div class="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
+        <button class="sp-kapat px-5 py-2.5 rounded-lg text-sm font-bold text-on-surface-variant hover:bg-white">Vazgeç</button>
+        <button id="spgKaydet" class="px-6 py-2.5 bg-primary text-on-primary rounded-lg text-sm font-bold hover:opacity-90">Kaydet</button></div>
+    </div>`
+  kat.querySelector('.sp-bg').addEventListener('click', modalKapat)
+  kat.querySelectorAll('.sp-kapat').forEach(b => b.addEventListener('click', modalKapat))
+  document.getElementById('spgKaydet').addEventListener('click', () => gocKaydet(s))
+}
+
+async function gocKaydet(s) {
+  const hata = msg => { const h = document.getElementById('spgHata'); h.textContent = msg; h.classList.remove('hidden') }
+  document.getElementById('spgHata').classList.add('hidden')
+  const tarih = document.getElementById('spgTarih').value
+  const tip = document.getElementById('spgTip').value
+  const not = document.getElementById('spgNot').value.trim() || null
+  if (!tarih) return hata('Tarih zorunlu.')
+  const btn = document.getElementById('spgKaydet'); btn.disabled = true; btn.textContent = 'Kaydediliyor…'
+  const { data, error } = await supabase.rpc('teslim_plani_goc', { p_siparis: s.id, p_tarih: tarih, p_tip: tip, p_not: not })
+  // ⚠️ Ham Postgres metni basılmaz — yetki / geçmiş tarih / plan zaten var
+  //    aynı gri satır olarak çıkıyor, kullanıcı ne yapacağını bilmiyordu.
+  if (error) { dbHata('teslim planı göç', error); btn.disabled = false; btn.textContent = 'Kaydet'; return hata(planHataMetni(error)) }
+  if (!data?.ok) { console.error('teslim_plani_goc beklenmeyen yanıt', data); btn.disabled = false; btn.textContent = 'Kaydet'; return hata('Kaydedilemedi — sunucu onay vermedi.') }
+  modalKapat()
+  // ⚠️ Sonuç mesajı toast() ile: #icerik yeniden çizilince içine yazılan
+  //    uyarı silinir ve işlem "sessizce başarısız" görünür.
+  toast('Planlanan teslim tarihi kaydedildi.')
+  await yukle()
+}
+
+// ---------- Tarih / gerekçe penceresi: planı OLAN dosya ----------
+// ⚠️ Planlanan tarihe UPDATE ile DOKUNULAMAZ (BR-0142). Tek kapı
+//    teslim_plani_degistir() RPC'si; hangi işlem olduğunu (GEREKCE / ERTELEME /
+//    ERKEN / DUZELTME) SUNUCU karar verir. Bu kuralları burada TEKRARLAMA —
+//    pencere yalnız girdi toplar ve dönen `tur`u Türkçeye çevirir.
+// ⚠️ Tarih BOŞ bırakılabilir: "tarih değişmiyor, yalnız gerekçe veriyorum"
+//    demektir (sunucu tur=GEREKCE üretir ve gerekçeyi zorunlu tutar).
+function planAc(id) {
+  const s = SIP.find(x => x.id === id); if (!s) return
+  const p = s._plan; if (!p) return
+  const a = one(s.stok_araclar)
+  // Gerekçe SORUMLU BİRİMİYLE gösterilir ("Kredi parası gelmedi — Kredi"):
+  // kırmızı "suç" değil "kim çözecek" demek (veri.js TESLIM_SORUMLU_ETIKET).
+  const nedenOpts = GECIKME_NEDENLERI.map(n => {
+    const sor = TESLIM_SORUMLU_ETIKET[n.ozellikler?.sorumlu] || ''
+    return `<option value="${kacis(n.kod)}">${kacis(n.ad)}${sor ? ' — ' + kacis(sor) : ''}</option>`
+  }).join('')
+  const kat = document.getElementById('spModalKat')
+  kat.classList.remove('hidden')
+  kat.innerHTML = `<div class="sp-bg absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+    <div class="relative mx-auto mt-[10vh] w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-5 border-b border-outline-variant flex items-center gap-3 bg-surface-container-low">
+        <div class="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary">${mat('edit_calendar')}</div>
+        <div class="min-w-0"><h2 class="text-lg font-black text-primary">Teslim Tarihi / Gerekçe</h2>
+          <p class="text-xs text-on-surface-variant truncate">${B(aracBaslik(a))} · ${B(a?.plaka) || '—'}</p></div></div>
+      <div class="p-6 space-y-3">
+        <div id="sptHata" class="hidden bg-error-container text-on-error-container rounded-lg px-3 py-2 text-sm"></div>
+        <div class="rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-bold text-on-surface-variant uppercase">Mevcut Plan</span>
+            <span class="text-label-md font-black text-on-surface tabular-nums">${kacis(planTarihi(p))}</span>
+          </div>
+          <div class="mt-1.5 flex flex-wrap items-center gap-1">
+            ${teslimRozet(s)}${ertelemeRozet(s)}
+            <span class="text-[11px] text-on-surface-variant">${p.plan_tipi === 'TAHMIN' ? 'Tahmin (gecikme sayacı işlemez)' : 'Müşteriye söz verildi'}</span>
+          </div>
+        </div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Yeni Teslim Tarihi</label>
+          <input id="sptTarih" type="date" min="${kacis(bugunISO())}" class="${INP} mt-1" />
+          <p class="text-[11px] text-on-surface-variant mt-1">Boş bırakırsanız tarih değişmez, yalnız gerekçe kaydedilir. Geçmiş bir gün seçilemez (BR-0141).</p></div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Gerekçe</label>
+          <select id="sptNeden" class="${INP} mt-1"><option value="">Seçiniz…</option>${nedenOpts}</select>
+          <p class="text-[11px] text-on-surface-variant mt-1">Tarih ileri alınıyorsa ya da hiç değişmiyorsa gerekçe zorunludur. Öne alırken istenmez.</p></div>
+        <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Açıklama</label>
+          <textarea id="sptNot" rows="2" placeholder="Ne oldu, ne zaman çözülür?" class="${INP} mt-1 resize-none"></textarea></div>
+      </div>
+      <div class="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
+        <button class="sp-kapat px-5 py-2.5 rounded-lg text-sm font-bold text-on-surface-variant hover:bg-white">Vazgeç</button>
+        <button id="sptKaydet" class="px-6 py-2.5 bg-primary text-on-primary rounded-lg text-sm font-bold hover:opacity-90">Kaydet</button></div>
+    </div>`
+  kat.querySelector('.sp-bg').addEventListener('click', modalKapat)
+  kat.querySelectorAll('.sp-kapat').forEach(b => b.addEventListener('click', modalKapat))
+  document.getElementById('sptKaydet').addEventListener('click', () => planKaydet(s))
+}
+
+async function planKaydet(s) {
+  const hata = msg => { const h = document.getElementById('sptHata'); h.textContent = msg; h.classList.remove('hidden') }
+  document.getElementById('sptHata').classList.add('hidden')
+  const tarih = document.getElementById('sptTarih').value || null
+  const neden = document.getElementById('sptNeden').value || null
+  const not = document.getElementById('sptNot').value.trim() || null
+  // İstemcide YALNIZ iki bariz kontrol: hangi işlem olduğuna sunucu karar verir,
+  // burada o sınıflandırma tekrarlanmaz (iki yerde yaşayan kural sessizce eskir).
+  if (!tarih && !neden) return hata('Tarihi değiştirmiyorsanız bir gerekçe seçmelisiniz.')
+  const n = GECIKME_NEDENLERI.find(x => x.kod === neden)
+  if (n && String(n.ozellikler?.not_zorunlu) === 'true' && !not) return hata('Bu gerekçe için açıklama zorunlu.')
+  const btn = document.getElementById('sptKaydet'); btn.disabled = true; btn.textContent = 'Kaydediliyor…'
+  const geri = () => { btn.disabled = false; btn.textContent = 'Kaydet' }
+  const { data, error } = await supabase.rpc('teslim_plani_degistir', {
+    p_siparis: s.id, p_yeni_tarih: tarih, p_neden_kod: neden, p_not: not,
+    p_plan_tipi: null, p_kaynak: 'DANISMAN',
+  })
+  if (error) { dbHata('teslim planı değiştir', error); geri(); return hata(planHataMetni(error)) }
+  if (!data?.ok) { console.error('teslim_plani_degistir beklenmeyen yanıt', data); geri(); return hata('Kaydedilemedi — sunucu onay vermedi.') }
+  modalKapat()
+  // ⚠️ Sonuç mesajı toast() ile: #icerik'e yazılan uyarıyı hemen ardından
+  //    gelen yeniden çizim siler, işlem "sessizce başarısız" görünürdü.
+  toast(planSonucMetni(data))
+  await yukle()
+}
+
+// Dönen `tur` → kullanıcının anlayacağı tek cümle. Sınıflandırma sunucunun.
+function planSonucMetni(d) {
+  const kac = Number(d?.erteleme_sayisi) || 0
+  if (d?.tur === 'GEREKCE') return 'Gerekçe kaydedildi.'
+  if (d?.tur === 'ERTELEME') return `Teslim tarihi ertelendi (${kac}. erteleme). Satış müdürüne bildirildi.`
+  if (d?.tur === 'ERKEN') return 'Teslim tarihi öne alındı.'
+  if (d?.tur === 'DUZELTME') return 'Tarih düzeltildi.'
+  return 'Teslim planı güncellendi.'
+}
+
+// Sunucu hatasını SINIFLANDIR (arac-kart.js / siparis-dosya.js ile aynı desen).
+// Ham Postgres metni kullanıcıya ne yapacağını söylemiyor; iki RPC de bunu kullanır.
+function planHataMetni(error) {
+  const m = error?.message || ''
+  if (/BR-0141|geçmiş bir gün|Geçmiş tarihli/i.test(m)) {
+    return 'Teslim tarihi geçmiş bir güne verilemez (BR-0141). Bugünü veya ileri bir günü seçin; geçmişteki sözü yalnız satış müdürü kaydedebilir.'
+  }
+  if (/BR-0143|Gerekçe seçilmeden/i.test(m)) return 'Tarih ertelenirken gerekçe zorunlu — listeden bir neden seçin.'
+  if (/açıklama zorunlu/i.test(m)) return 'Seçtiğiniz gerekçe için açıklama yazmanız gerekiyor.'
+  if (/Geçersiz gerekçe kodu/i.test(m)) return 'Gerekçe listesi değişmiş görünüyor — sayfayı yenileyip tekrar deneyin.'
+  if (/zaten plan var/i.test(m)) return 'Bu dosyada zaten bir plan var — listeyi yenileyip "Tarih / gerekçe" düğmesini kullanın.'
+  if (/Sipariş bulunamadı/i.test(m)) return 'Sipariş bulunamadı — liste eskimiş olabilir, yenileyin.'
+  if (error?.code === '42501' || /yetkiniz yok|yalnız satış müdürü/i.test(m)) {
+    return 'Bu dosyanın teslim planına dokunma yetkiniz yok — dosyanın danışmanı veya satış müdürü değiştirebilir.'
+  }
+  return 'Kaydedilemedi: ' + m
 }
 
 // ---------- Tablo satırı ----------
@@ -365,6 +717,7 @@ function satirHtml(s) {
   const a = one(s.stok_araclar), m = one(s.musteriler)
   const dan = danismanAdi(DMAP, s.danisman_id)
   const t = tahsilat(s)
+  const teslimSerit = teslimSeritHtml(s)
   // Kenar çizgisi: eksik tahsilat kadar FAZLA tahsilat da işaretlenir —
   // ikisi de teslimatı engelliyor (sql/149), ikisi de göze çarpmalı.
   const kenar = s.durum === 'IPTAL' ? (t.fazlaVar ? 'border-l-error' : 'border-l-outline-variant')
@@ -406,7 +759,7 @@ function satirHtml(s) {
         : `<span class="text-headline-sm font-black text-primary">${fmtPara(t.kalan)}</span>`
 
   return `
-    <tr data-satir="${s.id}" class="group hover:bg-surface-container-low/60 transition-colors cursor-pointer align-middle select-none">
+    <tr data-satir="${s.id}" class="group hover:bg-surface-container-low/60 transition-colors cursor-pointer align-middle select-none ${TESLIM_SINIF[s._sinif]?.satir || ''}">
       <td class="p-2 pl-3 border-l-4 ${kenar} transition-colors hidden sm:table-cell">
         <div class="w-14 h-11 rounded-lg bg-surface overflow-hidden border border-outline-variant flex items-center justify-center">
           ${foto ? `<img src="${kacis(kapakUrl(foto))}" alt="" loading="lazy" class="w-full h-full object-cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'material-symbols-outlined text-on-surface-variant',textContent:'directions_car'}))" />`
@@ -422,6 +775,8 @@ function satirHtml(s) {
                   bilgi kaybolmasın. Geniş ekranda gizli, orada kendi
                   kolonunda zaten var. */''}
             <div class="sm:hidden text-label-sm text-primary font-semibold truncate">${B(m?.ad_soyad) || '—'}</div>
+            ${/* Teslim kolonu xl altında kapalı — bilgi TEK ŞERİT olarak buraya iniyor. */''}
+            ${teslimSerit}
           </div>
           ${not ? `<button class="sp-not shrink-0 w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center hover:bg-amber-200" data-not="${s.id}" title="Görüşme notu">${mat('sticky_note_2', 'text-[15px]')}</button>` : ''}
         </div>
@@ -429,6 +784,7 @@ function satirHtml(s) {
       <td class="p-3 hidden sm:table-cell"><div class="flex flex-col min-w-0"><span class="font-semibold text-on-surface truncate">${B(m?.ad_soyad) || '—'}</span>
         <span class="text-label-sm text-on-surface-variant tabular-nums truncate">${kacis(telNo(m?.telefon)) || '—'}</span></div></td>
       <td class="p-3 hidden lg:table-cell"><div class="flex items-center gap-2 min-w-0"><span class="w-8 h-8 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold text-[11px] shrink-0">${basHarf(dan)}</span><span class="text-label-md text-on-surface truncate">${B(dan) || '—'}</span></div></td>
+      <td class="p-3 hidden xl:table-cell overflow-hidden">${teslimHucre(s)}</td>
       ${/* ⚠️ `items-stretch sm:items-start`: dar ekranda çipler kolon
             genişliğine yaslanır. `items-start` iken çip `fit-content`
             boyutlanıyor ve — ÖLÇÜLDÜ — `max-width` onu KÜÇÜLTMÜYOR;
@@ -564,6 +920,12 @@ async function stoktanAc() {
         <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Araç (stokta) *</label><select id="spmArac" class="${INP} mt-1"><option value="">Yükleniyor…</option></select></div>
         <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Alıcı Müşteri *</label><select id="spmMusteri" class="${INP} mt-1"><option value="">Yükleniyor…</option></select></div>
         <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Anlaşılan Tutar (₺) *</label><input id="spmTutar" inputmode="numeric" placeholder="0" class="${INP} mt-1 font-bold para-gir" /></div>
+        <div>
+          <label class="text-[11px] font-bold text-on-surface-variant uppercase">Planlanan Teslim Tarihi *</label>
+          <div id="spmCipler" class="flex flex-wrap gap-2 mt-1.5"></div>
+          <input id="spmTarih" type="date" class="${INP} mt-2 hidden" />
+          <p class="text-[11px] text-on-surface-variant mt-1.5">Müşteriye ne söz verdiyseniz onu seçin. Netleşmediyse <b>Henüz netleşmedi</b>: dosya plansız kalmaz ama kırmızı sayaç işlemez.</p>
+        </div>
         <p class="text-[11px] text-on-surface-variant">Sipariş oluşunca araç <b>SİPARİŞTE</b> olur, stok listesinden düşer, müşteri anlaşılan tutar kadar borçlanır.</p>
         <p class="text-[11px] text-on-surface-variant bg-surface-container-low rounded-lg p-2.5">
           <b>Kapora ayrı girilmez.</b> Kapora da bir tahsilattır — dosya açıldıktan sonra
@@ -577,6 +939,9 @@ async function stoktanAc() {
     </div>`
   kat.querySelector('.sp-bg').addEventListener('click', modalKapat)
   kat.querySelectorAll('.sp-kapat').forEach(b => b.addEventListener('click', modalKapat))
+  spmPlan = null
+  spmCipCiz()
+  document.getElementById('spmTarih').addEventListener('change', e => { if (spmPlan && spmPlan.kod === 'ozel') spmPlan.tarih = e.target.value })
 
   const [{ data: aralar, error: aErr }, { data: musteriler, error: mErr }] = await Promise.all([
     supabase.from('stok_araclar').select('id, marka, model, yil, plaka, durum').in('durum', ['STOKTA', 'YAYINDA']).order('created_at', { ascending: false }),
@@ -588,6 +953,32 @@ async function stoktanAc() {
   document.getElementById('spmKaydet').addEventListener('click', stoktanKaydet)
 }
 
+// Stoktan Sipariş: teslim planı çipleri. Seçenekler veri.js TESLIM_CIPLERI'nden
+// gelir (TEK KAYNAK) — burada yeniden tanımlanmaz. "Tarih seç" takvimi açar,
+// "Henüz netleşmedi" TAHMIN tipi üretir (tarih yine yazılır, kırmızı işlemez).
+function spmCipCiz() {
+  const kap = document.getElementById('spmCipler'); if (!kap) return
+  kap.innerHTML = cipler(TESLIM_CIPLERI.map(c => [c.kod, c.etiket]), spmPlan?.kod || '', { ad: 'spc' })
+  kap.querySelectorAll('[data-spc]').forEach(b => b.addEventListener('click', () => {
+    const c = TESLIM_CIPLERI.find(x => x.kod === b.dataset.spc); if (!c) return
+    const gir = document.getElementById('spmTarih')
+    if (c.gun == null) {
+      // ⚠️ SESSİZ VARSAYILAN YOK. Eskiden burada `gir.value || gunEkleISO(3)`
+      //    vardı: "Tarih seç" çipine basıp takvimi hiç açmayan kullanıcı,
+      //    farkında olmadan +3 GÜNLÜK MÜŞTERİ SÖZÜ kaydediyordu ve zorunluluk
+      //    kapısı memnun oluyordu. Diğer iki giriş noktası (arac-kart.js,
+      //    arac-detay.js) aynı çipte null döndürüp kullanıcıyı zorluyor —
+      //    üç nokta aynı davranır. Boş kalırsa stoktanKaydet() uyarır.
+      spmPlan = { kod: c.kod, tarih: gir.value || null, tip: c.tip }
+      gir.min = bugunISO(); gir.classList.remove('hidden'); gir.focus()
+    } else {
+      spmPlan = { kod: c.kod, tarih: gunEkleISO(c.gun), tip: c.tip }
+      gir.classList.add('hidden')
+    }
+    spmCipCiz()
+  }))
+}
+
 async function stoktanKaydet() {
   const hata = msg => { const h = document.getElementById('spmHata'); h.textContent = msg; h.classList.remove('hidden') }
   document.getElementById('spmHata').classList.add('hidden')
@@ -597,6 +988,7 @@ async function stoktanKaydet() {
   if (!arac_id) return hata('Stoktan araç seçin.')
   if (!musteri_id) return hata('Alıcı müşteri seçin.')
   if (!tutarRaw) return hata('Anlaşılan tutar zorunlu (sipariş borcu bundan oluşur).')
+  if (!spmPlan || !spmPlan.tarih) return hata('Planlanan teslim tarihini seçin (netleşmediyse "Henüz netleşmedi").')
   const btn = document.getElementById('spmKaydet'); btn.disabled = true; btn.textContent = 'Oluşturuluyor…'
   // Blok B/3 (Göksenil, 6 Ağu 2026): "kapora yazmasına gerek yok, o da bir
   // tahsilat neticesinde." Kapora artık sipariş açılışında ayrı alan DEĞİL;
@@ -606,6 +998,10 @@ async function stoktanKaydet() {
   const kayit = {
     arac_id, alici_musteri_id: musteri_id, danisman_id: BEN?.id, olusturan: BEN?.id,
     durum: 'ACIK', asama: 'SIPARIS', anlasilan_tutar: Number(tutarRaw),
+    // ⚠️ Bu iki kolon YALNIZ INSERT'te doğrudan yazılabilir. Sonradan UPDATE
+    //    ile değiştirilemez (trigger reddeder, BR-0142); değişiklik
+    //    teslim_plani_degistir() / teslim_plani_goc() RPC'lerinden geçer.
+    planlanan_teslim_tarihi: spmPlan.tarih, plan_tipi: spmPlan.tip,
   }
   // BR-0112/0504 — min satış fiyatının altındaysa satış müdürü onayı ŞART.
   // Sunucu zaten reddediyor (sql/88); burada onayı VEREBİLECEK kişiye sorup
@@ -738,11 +1134,15 @@ function baglaOlaylar() {
   })
   document.getElementById('spDanisman')?.addEventListener('change', e => { filtre.danisman = e.target.value; ciz() })
   document.getElementById('spDurum')?.addEventListener('change', e => { filtre.durum = e.target.value; ciz() })
-  document.getElementById('spTemizle')?.addEventListener('click', () => { filtre.arama = ''; filtre.danisman = ''; filtre.durum = ''; ciz() })
+  document.getElementById('spTemizle')?.addEventListener('click', () => { filtre.arama = ''; filtre.danisman = ''; filtre.durum = ''; filtre.sinif = ''; ciz() })
   document.getElementById('spYenile')?.addEventListener('click', yukle)
   document.getElementById('spExcel')?.addEventListener('click', csvIndir)
   document.getElementById('spYazdir')?.addEventListener('click', () => window.print())
   document.getElementById('spStoktan')?.addEventListener('click', stoktanAc)
+  // Göç şeridi: PLANSIZ grubuna süz / süzgeci kaldır.
+  document.getElementById('spPlansizSuz')?.addEventListener('click', () => {
+    filtre.sinif = filtre.sinif === 'PLANSIZ' ? '' : 'PLANSIZ'; ciz()
+  })
 
   // Tek tık → sağ panel · Çift tık → satış dosyası.
   // ⚠️ Tarayıcı çift tıkta ÖNCE iki click olayı yollar. Tek tıkı gecikmeli
@@ -750,13 +1150,13 @@ function baglaOlaylar() {
   //   bir açılıp hemen sayfa değişirdi (göz kırpması + boşuna çizim).
   document.querySelectorAll('[data-satir]').forEach(tr => {
     tr.addEventListener('click', ev => {
-      if (ev.target.closest('[data-not],[data-dosya],[data-iptal],[data-onaygonder],[data-teslim]')) return
+      if (ev.target.closest('[data-not],[data-dosya],[data-iptal],[data-onaygonder],[data-teslim],[data-goc],[data-plan]')) return
       clearTimeout(tikZaman)
       const id = tr.dataset.satir
       tikZaman = setTimeout(() => { acikDrawer = id; ciz() }, 230)
     })
     tr.addEventListener('dblclick', ev => {
-      if (ev.target.closest('[data-not],[data-dosya],[data-iptal],[data-onaygonder],[data-teslim]')) return
+      if (ev.target.closest('[data-not],[data-dosya],[data-iptal],[data-onaygonder],[data-teslim],[data-goc],[data-plan]')) return
       clearTimeout(tikZaman)
       location.href = 'siparis-dosya.html?id=' + encodeURIComponent(tr.dataset.satir)
     })
@@ -772,6 +1172,8 @@ function baglaOlaylar() {
   }))
   document.querySelectorAll('[data-dosya]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); location.href = 'siparis-dosya.html?id=' + encodeURIComponent(b.dataset.dosya) }))
   document.querySelectorAll('[data-iptal]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); iptalAc(b.dataset.iptal) }))
+  document.querySelectorAll('[data-goc]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); clearTimeout(tikZaman); gocAc(b.dataset.goc) }))
+  document.querySelectorAll('[data-plan]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); clearTimeout(tikZaman); planAc(b.dataset.plan) }))
   document.querySelectorAll('[data-onaygonder]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); onayaGonder(b.dataset.onaygonder) }))
   document.querySelectorAll('[data-teslim]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); teslimEt(b.dataset.teslim) }))
   window.addEventListener('keydown', e => { if (e.key === 'Escape') { modalKapat(); notBalonKapat(); drawerKapat() } })
@@ -802,3 +1204,5 @@ function notBalonAc(id, hedef) {
 function notBalonKapat() { if (NOT_BALON) { NOT_BALON.remove(); NOT_BALON = null } }
 
 const INP = 'bg-surface-container-low border border-outline-variant rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all w-full'
+// Teslim hücresindeki küçük bağlantı düğmesi (Tarih gir / Tarih / gerekçe).
+const PLAN_BTN = 'mt-0.5 text-[11px] font-bold text-primary underline underline-offset-2 hover:opacity-80'

@@ -10,7 +10,12 @@
 //   Bkz [[dms-alis-fiyatlama-tasarim]] · [[yetki-rol-haritasi]].
 // =====================================================================
 import { supabase } from './supabase-client.js'
-import { fmtPara, fmtTarih, kacis, trBuyuk, buyuk, dbHata, danismanMap, danismanAdi, urlParam, bugunISO, telSifirla, telBicim, REZERVASYON_NEDENLERI, rezervasyonNedenEtiket, KDV_KODLARI, kdvEtiket, kdvYonetir, ARAC_STOK_DURUMLARI, disLokasyon } from './veri.js'
+import { fmtPara, fmtTarih, kacis, trBuyuk, buyuk, dbHata, danismanMap, danismanAdi, urlParam, bugunISO, telSifirla, telBicim, REZERVASYON_NEDENLERI, rezervasyonNedenEtiket, KDV_KODLARI, kdvEtiket, kdvYonetir, ARAC_STOK_DURUMLARI, disLokasyon, TESLIM_CIPLERI, gunEkleISO } from './veri.js'
+// Rezervasyon → Sipariş dönüşümünde teslim planı YALNIZ teslim_plani_goc RPC
+// ile yazılabiliyor (UPDATE ile plan kolonlarına dokunmak trigger tarafından
+// reddedilir). sql/246'dan itibaren o RPC'yi DOSYANIN DANIŞMANI da çağırabiliyor
+// (ileri/bugün tarih); geçmiş tarih hâlâ yalnız satış müdürü/master.
+// Bu yüzden burada istemci tarafında müdür kapısı YOK — akış danışmanda kaldı.
 import { masrafKapiBagla } from './masraf-kapi.js'
 import { mat, bosDurum, uyari, basHarf, panoyaYaz } from './stitch-ui.js'
 import { svgBoya, PARCALAR, DURUMLAR, DURUM_ETIKET, ekspertizOku,
@@ -52,6 +57,12 @@ let SIP_MODU = false           // drawer "Sipariş Oluştur" modunda mı (rezerv
 let REZ_TIMER = null           // canlı sayaç setInterval id
 let REZ_ESC = null             // drawer Esc dinleyicisi
 let REZ_UZAT = false, REZ_DUZENLE = false, REZ_GUARD_DETAY = false   // aktif kart / guard kart alt panelleri
+// ---- Planlanan teslim tarihi (FAZ 1, sql/244-245) ----
+// Seçili çipin KODU (TESLIM_CIPLERI). İki ayrı yerde soruluyor:
+//   REZ_TESLIM_CIP  → drawer (yeni rezervasyon/sipariş, INSERT ile yazılır)
+//   DONUS_TESLIM_CIP→ "Siparişe Dönüştür" paneli (UPDATE yasak, RPC ile yazılır)
+let REZ_TESLIM_CIP = null, DONUS_TESLIM_CIP = null
+let REZ_DONUS = false          // "Siparişe Dönüştür" alt paneli açık mı
 
 const B = v => kacis(buyuk(v ?? ''))
 const INP = 'bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all w-full'
@@ -880,8 +891,20 @@ function rezAktifKart() {
       <button id="rezDuzenle" class="px-4 h-10 rounded-lg border border-outline-variant text-sm font-bold text-on-surface-variant hover:bg-white flex items-center gap-1.5">${mat('edit', 'text-[16px]')} Düzenle</button>
       <button id="rezKaldir" class="ml-auto px-4 h-10 rounded-lg text-error text-sm font-bold hover:bg-error/10 flex items-center gap-1.5">${mat('cancel', 'text-[16px]')} Rezervi Kaldır</button>
     </div>
-    ${REZ_UZAT ? rezUzatFormu() : ''}${REZ_DUZENLE ? rezDuzenleFormu() : ''}
+    ${REZ_DONUS ? rezDonusFormu() : ''}${REZ_UZAT ? rezUzatFormu() : ''}${REZ_DUZENLE ? rezDuzenleFormu() : ''}
   </div>`
+}
+
+// "Siparişe Dönüştür" alt paneli — tek sorduğu şey planlanan teslim tarihi.
+function rezDonusFormu() {
+  return `<div class="px-4 py-3 border-t border-outline-variant bg-surface-container-low space-y-2">
+    <span class="text-[11px] font-bold text-on-surface-variant uppercase">Siparişe Dönüştür</span>
+    <p class="text-[11px] text-on-surface-variant">Araç <b>SİPARİŞTE</b> durumuna geçer ve rezervasyon süresi kalkar. Teslim tarihi zorunludur.</p>
+    ${teslimCipSatiri('donTeslim', DONUS_TESLIM_CIP, true)}
+    <div class="flex justify-end gap-2 pt-1">
+      <button id="rezDonVazgec" class="h-9 px-3 rounded-lg border border-outline-variant text-xs font-bold text-on-surface-variant bg-white">Vazgeç</button>
+      <button id="rezDonKaydet" class="h-9 px-4 rounded-lg bg-primary text-on-primary text-xs font-bold hover:opacity-90">Siparişe Dönüştür</button>
+    </div></div>`
 }
 function avatarKucuk(ad) { return `<div class="w-8 h-8 rounded-full bg-primary-fixed text-primary text-[11px] flex items-center justify-center font-bold shrink-0">${basHarf(ad)}</div>` }
 
@@ -975,6 +998,48 @@ function rezSayacBaslat() {
   REZ_TIMER = setInterval(rezSayacTick, 1000)
 }
 
+// ---- Planlanan teslim tarihi çip satırı (FAZ 1) ----
+// TEK GÖRSEL KAYNAK: TESLIM_CIPLERI (veri.js). Burada YALNIZ tarih seçilir —
+// sınıf (GECIKEN/BUGUN/…) ve sıra SUNUCUDA v_teslim_plani'nde hesaplanır,
+// istemcide TEKRARLANMAZ.
+// onek: id/veri öneki (aynı sayfada iki satır olabilir, id çakışmasın).
+function teslimCipSatiri(onek, secili, zorunlu) {
+  const cipBtn = c => `<button type="button" data-tcip="${onek}" data-cipkod="${kacis(c.kod)}" class="${secili === c.kod ? TCIP_SEC : TCIP_BOS}">${kacis(c.etiket)}</button>`
+  return `<div>
+    <label class="text-[11px] font-bold text-on-surface-variant uppercase">Planlanan Teslim Tarihi ${zorunlu ? '*' : '(kapora girilirse zorunlu)'}</label>
+    <div class="mt-1.5 flex flex-wrap gap-1.5">${TESLIM_CIPLERI.map(cipBtn).join('')}</div>
+    <input id="${onek}Tarih" type="date" min="${bugunISO()}" class="${INP} mt-2 ${secili === 'ozel' ? '' : 'hidden'}" />
+    <p class="text-[10px] text-on-surface-variant mt-1">"Henüz netleşmedi" tahmini tarih yazar; gecikme kırmızısı işlemez.</p>
+  </div>`
+}
+const TCIP_SEC = 'h-9 px-3 rounded-lg text-xs font-bold border transition-colors bg-primary text-on-primary border-primary'
+const TCIP_BOS = 'h-9 px-3 rounded-lg text-xs font-bold border transition-colors border-outline-variant text-on-surface-variant hover:border-primary/40 bg-white'
+
+// Çip tıklamalarını bağlar. ⚠️ ciz() ÇAĞIRMAZ — tam yeniden çizim drawer'da
+// yazılmış fiyat/kapora/not alanlarını siler (REZ_SURE'de yaşanan sorun).
+function teslimCipBagla(onek, ayarla) {
+  const btnler = [...KAP.querySelectorAll(`button[data-tcip="${onek}"]`)]
+  const tarihEl = KAP.querySelector('#' + onek + 'Tarih')
+  btnler.forEach(b => b.addEventListener('click', () => {
+    const kod = b.dataset.cipkod
+    ayarla(kod)
+    btnler.forEach(x => { x.className = x.dataset.cipkod === kod ? TCIP_SEC : TCIP_BOS })
+    if (tarihEl) tarihEl.classList.toggle('hidden', kod !== 'ozel')
+  }))
+}
+
+// Seçimden { tarih:'YYYY-MM-DD', tip:'SOZ'|'TAHMIN' } üretir. Seçim yoksa veya
+// "Tarih seç" seçilip tarih girilmediyse null döner (çağıran uyarır).
+function teslimCipOku(onek, kod) {
+  const c = TESLIM_CIPLERI.find(x => x.kod === kod)
+  if (!c) return null
+  if (c.gun == null) {
+    const t = KAP.querySelector('#' + onek + 'Tarih')?.value || ''
+    return t ? { tarih: t, tip: c.tip } : null
+  }
+  return { tarih: gunEkleISO(c.gun), tip: c.tip }
+}
+
 // ---- Drawer: "Aracı Rezerve Et" ----
 function rezDrawerHtml() {
   if (!REZ_DRAWER) return ''
@@ -1020,6 +1085,11 @@ function rezDrawerHtml() {
                  aynısı. Zorunluluk kaydederken koşullu uygulanır. */''}
         ${alanDuz(SIP_MODU ? 'Satış Tipi *' : 'Satış Tipi (kapora girilirse zorunlu)',
           `<select id="rezSatisTipi" class="${INP}"><option value="">Seçiniz…</option>${(TANIM['SATIS_SEKLI'] || []).map(t => `<option value="${kacis(t.kod)}">${kacis(t.ad)}</option>`).join('')}</select>`)}
+        ${/* Planlanan teslim tarihi — satış tipiyle AYNI mantık: kayıt siparişe
+              dönüşüyorsa (SIP_MODU || kapora > 0) zorunlu. Bu yüzden iki modda
+              da basılır; yalnız SIP_MODU'da bassaydık kaporalı rezervasyondan
+              doğan sipariş plansız kalırdı. */''}
+        ${teslimCipSatiri('rezTeslim', REZ_TESLIM_CIP, SIP_MODU)}
         ${SIP_MODU ? `<div class="text-[11px] text-on-surface-variant bg-surface-container-low rounded-lg p-2.5">Sipariş oluşturulunca araç <b>SİPARİŞTE</b> olur, müşteri anlaşılan tutar kadar borçlanır ve <b>Satış Dosyası</b> açılır. Tahsilat/masraf oradan girilir.</div>` : `
         ${alanDuz('Rezervasyon Nedeni', `<select id="rezNeden" class="${INP}"><option value="">—</option>${nedenOpts}</select>`)}
         <div><label class="text-[11px] font-bold text-on-surface-variant uppercase">Geçerlilik Süresi</label>
@@ -1035,7 +1105,7 @@ function rezDrawerHtml() {
     </aside>`
 }
 function rezDrawerKapat(cizYap = true) {
-  REZ_DRAWER = false; SIP_MODU = false
+  REZ_DRAWER = false; SIP_MODU = false; REZ_TESLIM_CIP = null
   if (REZ_ESC) { document.removeEventListener('keydown', REZ_ESC); REZ_ESC = null }
   if (cizYap) ciz()
 }
@@ -1099,6 +1169,17 @@ async function rezKaydet() {
   if ((SIP_MODU || kapora > 0) && !satisTipi)
     return hata('Satış tipi zorunlu (Takas, Senetli, Vadeli, Otosor…).')
 
+  // Planlanan teslim tarihi — INSERT'te doğrudan yazılabilir (UPDATE'te trigger
+  // reddeder, bkz. rezSipariseDonustur). Sipariş doğuran kayıtta zorunlu.
+  // İhale satışında sunucu plan_muaf=true damgalıyor (sql/245) — takip dışı,
+  // tarih sormak anlamsız plan kaydı üretirdi.
+  const teslimGerekli = (SIP_MODU || kapora > 0) && satisTipi !== 'IHALE'
+  const teslim = teslimGerekli ? teslimCipOku('rezTeslim', REZ_TESLIM_CIP) : null
+  if (teslimGerekli && !teslim)
+    return hata(REZ_TESLIM_CIP === 'ozel'
+      ? 'Planlanan teslim tarihini seçin.'
+      : 'Planlanan teslim tarihi zorunlu — bir seçenek işaretleyin.')
+
   let bitis
   if (REZ_SURE === 'ozel') {
     const t = g('rezTarih')
@@ -1118,6 +1199,9 @@ async function rezKaydet() {
     anlasilan_tutar: fiyatRaw ? Number(fiyatRaw) : null, gecerlilik_bitis: siparisMi ? null : bitis,
     rezervasyon_nedeni: SIP_MODU ? null : neden, kapora_tutar: kapora, rezervasyon_notu: notMetni,
     satis_sekli: satisTipi || null,
+    // Plan yalnız SİPARİŞTE anlamlı; rezervasyonda boş bırakılır.
+    planlanan_teslim_tarihi: siparisMi ? teslim.tarih : null,
+    plan_tipi: siparisMi ? teslim.tip : null,
   }
   const { data, error } = await supabase.from('siparisler').insert(govde).select('id')
   if (btn) { btn.disabled = false; btn.textContent = SIP_MODU ? 'Sipariş Oluştur ve Dosyayı Aç' : 'Kaydet ve Rezerve Et' }
@@ -1131,13 +1215,46 @@ async function rezKaydet() {
   uyariGoster(kapora > 0 ? 'Kapora alındı — araç SİPARİŞ oldu.' : 'Rezervasyon oluşturuldu, araç kilitlendi.', true)
 }
 
+// "Siparişe Dönüştür" — artık confirm() değil, teslim tarihi soran alt panel.
+// ⚠️ Bu yol bir UPDATE. Trigger, planlanan_teslim_tarihi'ne UPDATE ile
+// dokunulmasını REDDEDER (BR-0142); tarih ancak teslim_plani_goc RPC'siyle
+// yazılabilir ve o RPC yalnız satış müdürü/master'a açıktır. Düz danışman
+// yarım kayıt (plansız sipariş) bırakmasın diye akış BAŞTAN durdurulur.
+function rezDonusPaneliAc() {
+  if (!REZ) return
+  REZ_DONUS = !REZ_DONUS; REZ_UZAT = false; REZ_DUZENLE = false
+  if (!REZ_DONUS) DONUS_TESLIM_CIP = null
+  ciz()
+}
+
 async function rezSipariseDonustur() {
   if (!REZ) return
-  if (!confirm('Bu rezervasyon siparişe dönüştürülsün mü? Araç SİPARİŞTE durumuna geçer.')) return
-  const { data, error } = await supabase.from('siparisler').update({ asama: 'SIPARIS', gecerlilik_bitis: null }).eq('id', REZ.id).select('id')
-  if (error) { dbHata('rez siparise dönüştür', error); uyariGoster('İşlem başarısız: ' + error.message); return }
-  if (!data?.length) { uyariGoster('Güncellenemedi — yetki/kayıt yok.'); return }
-  await veriYukle(ARAC.id, DANISMAN); ciz(); uyariGoster('Sipariş oluşturuldu.', true)
+  const teslim = teslimCipOku('donTeslim', DONUS_TESLIM_CIP)
+  if (!teslim) {
+    uyariGoster(DONUS_TESLIM_CIP === 'ozel'
+      ? 'Planlanan teslim tarihini seçin.'
+      : 'Planlanan teslim tarihi zorunlu — bir seçenek işaretleyin.')
+    return
+  }
+  const btn = KAP.querySelector('#rezDonKaydet')
+  if (btn) { btn.disabled = true; btn.textContent = 'Kaydediliyor…' }
+  // (a) Aşama güncellemesi — tarih ALANI YOK, trigger reddederdi.
+  const { data, error } = await supabase.from('siparisler')
+    .update({ asama: 'SIPARIS', gecerlilik_bitis: null }).eq('id', REZ.id).select('id')
+  if (error) { dbHata('rez siparise dönüştür', error); if (btn) { btn.disabled = false; btn.textContent = 'Siparişe Dönüştür' }; uyariGoster('İşlem başarısız: ' + error.message); return }
+  if (!data?.length) { if (btn) { btn.disabled = false; btn.textContent = 'Siparişe Dönüştür' }; uyariGoster('Güncellenemedi — yetki/kayıt yok.'); return }
+  // (b) Teslim planı — YALNIZ RPC ile yazılabilir.
+  const { error: pErr } = await supabase.rpc('teslim_plani_goc', {
+    p_siparis: REZ.id, p_tarih: teslim.tarih, p_tip: teslim.tip,
+    p_not: 'Rezervasyondan siparişe dönüştürme',
+  })
+  if (pErr) {
+    dbHata('teslim_plani_goc', pErr)
+    uyariGoster('Sipariş açıldı ancak teslim tarihi yazılamadı: ' + pErr.message)
+  }
+  REZ_DONUS = false; DONUS_TESLIM_CIP = null
+  await veriYukle(ARAC.id, DANISMAN); ciz()
+  if (!pErr) uyariGoster('Sipariş oluşturuldu, teslim tarihi kaydedildi.', true)
 }
 
 async function rezSureUzatKaydet(saat, tarih) {
@@ -1352,13 +1469,18 @@ function bagla() {
   if (aktifSekme === 'masraf' && finansGorur(DANISMAN)) masrafBagla()
 
   // Rezervasyon (Faz R3) — Özet'te rezervasyonSeridi() render edildiyse bağlanır
-  q('#rezBaslatBtn')?.addEventListener('click', () => { SIP_MODU = false; REZ_DRAWER = true; REZ_MUSTERI = null; REZ_YENI_MUSTERI = false; REZ_SURE = '24h'; ciz() })
-  q('#sipBaslatBtn')?.addEventListener('click', () => { SIP_MODU = true; REZ_DRAWER = true; REZ_MUSTERI = null; REZ_YENI_MUSTERI = false; ciz() })
+  q('#rezBaslatBtn')?.addEventListener('click', () => { SIP_MODU = false; REZ_DRAWER = true; REZ_MUSTERI = null; REZ_YENI_MUSTERI = false; REZ_SURE = '24h'; REZ_TESLIM_CIP = null; ciz() })
+  q('#sipBaslatBtn')?.addEventListener('click', () => { SIP_MODU = true; REZ_DRAWER = true; REZ_MUSTERI = null; REZ_YENI_MUSTERI = false; REZ_TESLIM_CIP = null; ciz() })
   q('#rezSiparisGit')?.addEventListener('click', () => { if (REZ) location.href = 'siparis-dosya.html?id=' + encodeURIComponent(REZ.id) })
   // Aktif kart (benim rezervasyonum)
-  q('#rezDonustur')?.addEventListener('click', rezSipariseDonustur)
-  q('#rezUzat')?.addEventListener('click', () => { REZ_UZAT = !REZ_UZAT; REZ_DUZENLE = false; ciz() })
-  q('#rezDuzenle')?.addEventListener('click', () => { REZ_DUZENLE = !REZ_DUZENLE; REZ_UZAT = false; ciz() })
+  q('#rezDonustur')?.addEventListener('click', rezDonusPaneliAc)
+  if (REZ_DONUS) {
+    teslimCipBagla('donTeslim', kod => { DONUS_TESLIM_CIP = kod })
+    q('#rezDonKaydet')?.addEventListener('click', rezSipariseDonustur)
+    q('#rezDonVazgec')?.addEventListener('click', () => { REZ_DONUS = false; DONUS_TESLIM_CIP = null; ciz() })
+  }
+  q('#rezUzat')?.addEventListener('click', () => { REZ_UZAT = !REZ_UZAT; REZ_DUZENLE = false; REZ_DONUS = false; ciz() })
+  q('#rezDuzenle')?.addEventListener('click', () => { REZ_DUZENLE = !REZ_DUZENLE; REZ_UZAT = false; REZ_DONUS = false; ciz() })
   q('#rezKaldir')?.addEventListener('click', rezKaldirAksiyon)
   qa('button[data-uzatsaat]').forEach(b => b.addEventListener('click', () => rezSureUzatKaydet(Number(b.dataset.uzatsaat), null)))
   q('#rezUzatKaydet')?.addEventListener('click', () => { const t = q('#rezUzatTarih')?.value; if (t) rezSureUzatKaydet(null, t); else uyariGoster('Tarih/saat seçin.') })
@@ -1377,6 +1499,7 @@ function bagla() {
     q('#rezYeniMBtn')?.addEventListener('click', () => { REZ_YENI_MUSTERI = !REZ_YENI_MUSTERI; ciz() })
     q('#rezMKaldir')?.addEventListener('click', () => { REZ_MUSTERI = null; ciz() })
     qa('button[data-sure]').forEach(b => b.addEventListener('click', () => { REZ_SURE = b.dataset.sure; ciz() }))
+    teslimCipBagla('rezTeslim', kod => { REZ_TESLIM_CIP = kod })
     q('#rezKaydetBtn')?.addEventListener('click', rezKaydet)
     if (!REZ_ESC) {
       REZ_ESC = e => { if (e.key === 'Escape') rezDrawerKapat() }

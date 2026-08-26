@@ -413,6 +413,50 @@ export function kaskoKodu(a) {
 }
 
 // Sipariş aşama + durum (sql/41 siparis_asama_check / siparis_durum_check ile birebir)
+// ---------- TESLİM PLANI (sql/244-245) ----------
+// ⚠️ TEK KAYNAK. Sınıf ve sıra SUNUCUDA hesaplanıyor (v_teslim_plani.sinif /
+//   sira_anahtari); burada YALNIZCA görsel karşılıkları var. Sınıflandırma
+//   mantığını istemcide TEKRARLAMA — iki yerde yaşayan kural sessizce eskir.
+export const TESLIM_SINIF = {
+  GECIKEN:         { etiket: 'Gecikti',          grup: 'GECİKEN',      sira: 0, cip: 'bg-error-container text-on-error-container', satir: 'bg-error/5' },
+  GECIKEN_CEVAPLI: { etiket: 'Gecikti · yanıtlı', grup: 'GECİKEN',      sira: 1, cip: 'bg-amber-100 text-amber-900',                satir: 'bg-amber-50/60' },
+  BUGUN:           { etiket: 'Bugün',            grup: 'BUGÜN TESLİM', sira: 2, cip: 'bg-blue-100 text-blue-800',                  satir: 'bg-blue-50/50' },
+  TOLERANS:        { etiket: 'Dün olmadı',       grup: 'BUGÜN TESLİM', sira: 2, cip: 'bg-amber-100 text-amber-900',                satir: 'bg-amber-50/40' },
+  YARIN:           { etiket: 'Yarın',            grup: 'YAKLAŞAN',     sira: 3, cip: 'bg-surface-container-high text-on-surface',  satir: '' },
+  ILERI:           { etiket: '',                 grup: 'YAKLAŞAN',     sira: 4, cip: 'bg-surface-container-high text-on-surface',  satir: '' },
+  TAHMIN:          { etiket: 'Tarih netleşmedi', grup: 'NETLEŞMEDİ',   sira: 5, cip: 'bg-amber-100 text-amber-900',                satir: '' },
+  PLANSIZ:         { etiket: 'Plan yok',         grup: 'PLANSIZ',      sira: 6, cip: 'bg-error-container text-on-error-container', satir: '' },
+  MUAF:            { etiket: 'İhale',            grup: 'MUAF',         sira: 7, cip: 'bg-surface-container-high text-on-surface-variant', satir: '' },
+}
+
+// Gecikmeden kimin sorumlu olduğu — kırmızı "suç" değil "kim çözecek" demektir.
+// tanimlar(tip='TESLIM_GECIKME_NEDENI').ozellikler->>'sorumlu' ile aynı küme.
+export const TESLIM_SORUMLU_ETIKET = {
+  DANISMAN: 'Danışman', MUDUR: 'Satış Müdürü', KREDI: 'Kredi', FINANS: 'Finans',
+  SIGORTA: 'Sigorta', OPERASYON: 'Operasyon', MUSTERI: 'Müşteri',
+}
+
+// Sipariş açarken sunulan hızlı seçenekler. "Netleşmedi" TAHMIN üretir:
+// tarih yine girilir (boş kalmaz) ama kırmızı mekanizması işlemez.
+export const TESLIM_CIPLERI = [
+  { kod: 'bugun',  etiket: 'Bugün',     gun: 0, tip: 'SOZ' },
+  { kod: 'yarin',  etiket: 'Yarın',     gun: 1, tip: 'SOZ' },
+  { kod: 'g3',     etiket: '+3 gün',    gun: 3, tip: 'SOZ' },
+  { kod: 'g7',     etiket: '+1 hafta',  gun: 7, tip: 'SOZ' },
+  { kod: 'ozel',   etiket: 'Tarih seç', gun: null, tip: 'SOZ' },
+  { kod: 'tahmin', etiket: 'Henüz netleşmedi', gun: 7, tip: 'TAHMIN' },
+]
+
+// Bugünden N gün sonrası (YYYY-MM-DD, yerel). bugunISO() zaten var (satır ~106),
+// tekrar TANIMLAMA — aynı adla ikinci export modülü çalışma anında düşürür
+// ("Identifier has already been declared"); node --check bunu GÖRMEZ.
+export function gunEkleISO(ekGun = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + ekGun)
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 10)
+}
+
 export const SIPARIS_ASAMALARI = ['TEKLIF', 'REZERVASYON', 'SIPARIS']
 export const SIPARIS_DURUMLARI = ['ACIK', 'TESLIM_EDILDI', 'IPTAL']
 
