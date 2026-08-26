@@ -12,8 +12,9 @@
 // kartıyla AYNI motor. Fiyat ya da TSB kasko değişince rakam kendiliğinden
 // değişir; sql/107 tetikleyicileri de görseli ESKI işaretler.
 //
-// ⚠️ ÜRETİM TARAYICIDA. html2canvas 800px'lik gizli bir kapsayıcıyı tarar.
-// Bu yüzden şablon genişliği SABİT 800px olmalı (bkz. ilan-sablon.html).
+// ⚠️ ÜRETİM TARAYICIDA. html2canvas 600px'lik gizli bir kapsayıcıyı tarar.
+// Şablon genişliği SABİT 600px olmalı (bkz. ilan-sablon.html) — sahibinden
+// açıklamasındaki görseli küçültmez, taşan kısmı kırpar.
 // html2canvas ~200KB — sadece üretim anında dinamik import ediliyor
 // (qr.js'te olduğu gibi), sayfa açılışına yük binmiyor.
 // =====================================================================
@@ -389,7 +390,7 @@ async function canvasUret(html) {
   const stiller = (html.match(/<style[\s\S]*?<\/style>/gi) || []).join('\n')
 
   const kap = document.createElement('div')
-  kap.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;z-index:-1'
+  kap.style.cssText = 'position:fixed;left:-9999px;top:0;width:600px;background:#fff;z-index:-1'
   kap.innerHTML = stiller + icerik
   document.body.appendChild(kap)
   // Fontlar hazır olmadan taranırsa metinler kayar
@@ -399,12 +400,17 @@ async function canvasUret(html) {
   let blob
   try {
     const canvas = await html2canvas(kap.querySelector('.ilan') || kap, {
-      scale: 2,               // sahibinden'de okunaklı olsun (1600px genişlik)
+      // ⚠️ scale 1 — ÇIKTININ PİKSEL GENİŞLİĞİ 600 OLMALI.
+      //   sahibinden ilan açıklamasındaki görseli KÜÇÜLTMEZ, taşanı KIRPAR.
+      //   Eskiden scale:2 ile 1600px üretiliyordu ve sağ yarısı görünmüyordu
+      //   (donanım listesinin sağ kolonu kesikti — 26 Ağu 2026 tespiti).
+      //   Üretilen dosya zaten eksiksizdi; kırpma sahibinden tarafındaydı.
+      scale: 1,
       backgroundColor: '#fff',
       useCORS: true,
       logging: false,
     })
-    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92))
+    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9))
   } finally {
     kap.remove()
   }
